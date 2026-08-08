@@ -1146,27 +1146,28 @@ DEEPSEEK_API_KEY=твой_ключ
 text
 """)
 # ===== ИСПРАВЛЕННЫЙ БЛОК СТАТИСТИКИ ОБУЧЕНИЯ =====
-if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
-st.markdown("#### 📊 Статистика обучения")
-trades = st.session_state.strategy.trade_history
-df_trades = pd.DataFrame(trades)
-if not df_trades.empty:
-    fig_learn = go.Figure()
-    fig_learn.add_trace(go.Scatter(
-        x=df_trades['time'],
-        y=df_trades['profit'].cumsum(),
-        mode='lines',
-        name='Кумулятивная прибыль',
-        line=dict(color='#bb88ff', width=2)
-    ))
-    fig_learn.update_layout(
-        template='plotly_dark',
-        height=250,
-        paper_bgcolor='#0d0d1a',
-        plot_bgcolor='#0d0d1a',
-        margin=dict(l=10, r=10, t=20, b=10)
-    )
-    st.plotly_chart(fig_learn, use_container_width=True)
+ # ===== БЛОК СТАТИСТИКИ ОБУЧЕНИЯ =====
+        if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
+            st.markdown("#### 📊 Статистика обучения")
+            trades = st.session_state.strategy.trade_history
+            df_trades = pd.DataFrame(trades)
+            if not df_trades.empty:
+                fig_learn = go.Figure()
+                fig_learn.add_trace(go.Scatter(
+                    x=df_trades['time'],
+                    y=df_trades['profit'].cumsum(),
+                    mode='lines',
+                    name='Кумулятивная прибыль',
+                    line=dict(color='#bb88ff', width=2)
+                ))
+                fig_learn.update_layout(
+                    template='plotly_dark',
+                    height=250,
+                    paper_bgcolor='#0d0d1a',
+                    plot_bgcolor='#0d0d1a',
+                    margin=dict(l=10, r=10, t=20, b=10)
+                )
+                st.plotly_chart(fig_learn, use_container_width=True)
 
 # ============================================================
 # ФОНОВЫЙ ЦИКЛ (если бот запущен)

@@ -1,6 +1,6 @@
 # ============================================================
 # HOVMEL IATS — ШЕДЕВР v5.1 (С ЗАЩИТОЙ УБЫТОЧНЫХ ПОЗИЦИЙ)
-# ПОЛНЫЙ ФАЙЛ — КОПИРУЙ ЦЕЛИКОМ
+# ПОЛНЫЙ ФАЙЛ — ИСПРАВЛЕННЫЕ ОТСТУПЫ
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -561,7 +561,6 @@ class IATSStrategyAI:
 
         if self.trading_paused and self.pause_until and now < self.pause_until:
             # Если пауза активна, мы НЕ входим в новые сделки, но позицию держим
-            # (в check_entry_signal это уже учтено)
             pass
 
         current_price = self.get_current_price()
@@ -1161,7 +1160,7 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# График обучения
+# ===== ИСПРАВЛЕННЫЙ БЛОК =====
 if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
 st.markdown("#### 📊 Статистика обучения")
 trades = st.session_state.strategy.trade_history

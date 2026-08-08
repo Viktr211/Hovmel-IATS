@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v5.1 (ФИНАЛ, С ФУНКЦИЕЙ ОБУЧЕНИЯ)
+# HOVMEL IATS — ШЕДЕВР v5.1 (ФИНАЛ С ФУНКЦИЯМИ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -95,6 +95,29 @@ def display_learning_stats():
                 margin=dict(l=10, r=10, t=20, b=10)
             )
             st.plotly_chart(fig_learn, use_container_width=True)
+
+# ============================================================
+# ФУНКЦИЯ ДЛЯ ЗАПУСКА ФОНОВОГО ПОТОКА
+# ============================================================
+def start_bot_thread():
+    """Запускает фоновый цикл бота, если он не запущен"""
+    if st.session_state.running and st.session_state.strategy:
+        if not st.session_state.thread_started:
+            def bot_loop():
+                while st.session_state.running:
+                    try:
+                        st.session_state.strategy.tick()
+                        time.sleep(st.session_state.get('scan_interval', 10))
+                    except Exception as e:
+                        st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
+                        time.sleep(5)
+            thread = threading.Thread(target=bot_loop, daemon=True)
+            thread.start()
+            st.session_state.thread_started = True
+            st.session_state.logs.append("🧵 Фоновый поток запущен")
+        if st.session_state.running:
+            time.sleep(0.5)
+            st.rerun()
 
 # ============================================================
 # AI-АССИСТЕНТ (DeepSeek)
@@ -1168,25 +1191,9 @@ text
 display_learning_stats()
 
 # ============================================================
-# ФОНОВЫЙ ЦИКЛ
+# ЗАПУСК ФОНОВОГО ПОТОКА (ВЫЗОВ ФУНКЦИИ)
 # ============================================================
-if st.session_state.running and st.session_state.strategy:
-if not st.session_state.thread_started:
-def bot_loop():
-while st.session_state.running:
-    try:
-        st.session_state.strategy.tick()
-        time.sleep(st.session_state.get('scan_interval', 10))
-    except Exception as e:
-        st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
-        time.sleep(5)
-thread = threading.Thread(target=bot_loop, daemon=True)
-thread.start()
-st.session_state.thread_started = True
-st.session_state.logs.append("🧵 Фоновый поток запущен")
-if st.session_state.running:
-time.sleep(0.5)
-st.rerun()
+start_bot_thread()
 
 # ============================================================
 # ФУТЕР

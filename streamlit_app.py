@@ -1,6 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v5.1 (С ЗАЩИТОЙ УБЫТОЧНЫХ ПОЗИЦИЙ)
-# ПОЛНЫЙ ФАЙЛ — ИСПРАВЛЕННЫЕ ОТСТУПЫ (ГАРАНТИРОВАННО РАБОТАЕТ)
+# HOVMEL IATS — ШЕДЕВР v5.1 (ФИНАЛ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -18,12 +17,9 @@ import os
 import math
 import requests
 from dotenv import load_dotenv
-import hashlib
-from collections import deque
 
 load_dotenv()
 
-# === КОНФИГУРАЦИЯ ===
 st.set_page_config(
     page_title="HOVMEL IATS v5.1 - AI Trader",
     page_icon="🧠",
@@ -74,28 +70,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# AI-АССИСТЕНТ (DeepSeek)
+# AI-АССИСТЕНТ
 # ============================================================
 class DeepSeekAIAssistant:
     def __init__(self):
         self.api_key = os.getenv('DEEPSEEK_API_KEY') or st.secrets.get('DEEPSEEK_API_KEY', '')
         self.api_url = "https://api.deepseek.com/v1/chat/completions"
-        self.cache = {}
-        self.conversation_history = []
-        self.learning_memory = {}
 
     def analyze(self, analysis_type, data):
         if not self.api_key:
             return {"error": "Не задан API-ключ DeepSeek"}
         prompt = self._build_prompt(analysis_type, data)
-        response = self._call_deepseek(prompt)
-        self.conversation_history.append({
-            'time': datetime.now().isoformat(),
-            'type': analysis_type,
-            'data': data,
-            'response': response
-        })
-        return response
+        return self._call_deepseek(prompt)
 
     def _build_prompt(self, analysis_type, data):
         prompts = {
@@ -105,8 +91,8 @@ class DeepSeekAIAssistant:
             Ответь строго в JSON формате:
             {{
                 "trend": "up" или "down" или "neutral",
-                "confidence": число от 0 до 100,
-                "reason": "краткое объяснение (на русском)",
+                "confidence": число,
+                "reason": "краткое объяснение",
                 "suggested_sl_ticks": число,
                 "suggested_avg_step": число,
                 "suggested_risk": число,
@@ -120,8 +106,7 @@ class DeepSeekAIAssistant:
             Ответь в JSON:
             {{
                 "has_important_news": true/false,
-                "news_items": ["список важных событий"],
-                "time_to_news_minutes": число,
+                "news_items": [],
                 "should_pause_trading": true/false,
                 "pause_before_minutes": число,
                 "pause_after_minutes": число,
@@ -136,8 +121,6 @@ class DeepSeekAIAssistant:
                 "overall_sentiment": "bullish" или "bearish" или "neutral",
                 "confidence": число,
                 "fear_greed_index": число,
-                "support_level": число,
-                "resistance_level": число,
                 "recommendation": "buy" или "sell" или "wait"
             }}
             """,
@@ -146,11 +129,10 @@ class DeepSeekAIAssistant:
             {json.dumps(data, indent=2)}
             Ответь в JSON:
             {{
-                "best_time_to_trade": "часы",
-                "worst_time_to_trade": "часы",
+                "best_time_to_trade": "",
+                "worst_time_to_trade": "",
                 "optimal_avg_count": число,
                 "optimal_avg_step": число,
-                "winrate_improvement_suggestions": ["предложения"],
                 "risk_adjustment": "increase" или "decrease" или "keep"
             }}
             """,
@@ -175,32 +157,25 @@ class DeepSeekAIAssistant:
 
     def _call_deepseek(self, prompt):
         try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
+            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
             payload = {
                 "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": "Ты эксперт по криптовалютной торговле. Отвечай только структурированным JSON."},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": [{"role": "system", "content": "Ты эксперт. Отвечай только JSON."},
+                             {"role": "user", "content": prompt}],
                 "temperature": 0.3,
                 "response_format": {"type": "json_object"},
-                "max_tokens": 1000
+                "max_tokens": 800
             }
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
             if response.status_code == 200:
-                result = response.json()
-                content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+                content = response.json().get('choices', [{}])[0].get('message', {}).get('content', '{}')
                 return json.loads(content)
-            else:
-                return {"error": f"API ошибка: {response.status_code}"}
+            return {"error": f"API ошибка: {response.status_code}"}
         except Exception as e:
             return {"error": str(e)}
 
 # ============================================================
-# СТРАТЕГИЯ IATS С AI-АДАПТАЦИЕЙ (v5.1)
+# СТРАТЕГИЯ IATS (упрощённая версия с защитой)
 # ============================================================
 class IATSStrategyAI:
     def __init__(self, exchange, symbol, config, ai_assistant):
@@ -215,8 +190,6 @@ class IATSStrategyAI:
         self.reverse_count = 0
         self.trailing_active = False
         self.trailing_level = 0.0
-        self.last_entry_time = 0
-        
         self.ai_last_update = None
         self.ai_suggestions = {}
         self.trading_paused = False
@@ -228,20 +201,17 @@ class IATSStrategyAI:
         self.worst_hours = []
 
     def _get_tick_size(self):
-        market = self.exchange.market(self.symbol)
-        return market['precision']['price']
+        return self.exchange.market(self.symbol)['precision']['price']
 
     def get_balance(self, currency='USDT'):
         try:
-            balance = self.exchange.fetch_balance()
-            return balance['free'].get(currency, 0.0)
+            return self.exchange.fetch_balance()['free'].get(currency, 0.0)
         except:
             return 0.0
 
     def get_current_price(self):
         try:
-            ticker = self.exchange.fetch_ticker(self.symbol)
-            return ticker['last']
+            return self.exchange.fetch_ticker(self.symbol)['last']
         except:
             return 0.0
 
@@ -258,14 +228,14 @@ class IATSStrategyAI:
         if df.empty:
             return {}
         close = df['close']
+        rsi = self._calculate_rsi(close)
         return {
-            'rsi': self._calculate_rsi(close),
+            'rsi': rsi,
             'volatility': close.pct_change().std() * 100,
             'volume': df['volume'].mean(),
             'sma20': close.rolling(20).mean().iloc[-1] if len(close) >= 20 else close.iloc[-1],
             'sma50': close.rolling(50).mean().iloc[-1] if len(close) >= 50 else close.iloc[-1],
             'price_change_1h': (close.iloc[-1] - close.iloc[-60]) / close.iloc[-60] * 100 if len(close) >= 60 else 0,
-            'price_change_24h': self._get_24h_change()
         }
 
     def _calculate_rsi(self, prices, period=14):
@@ -275,37 +245,16 @@ class IATSStrategyAI:
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi.iloc[-1]
-
-    def _get_24h_change(self):
-        try:
-            ticker = self.exchange.fetch_ticker(self.symbol)
-            return ticker.get('percentage', 0)
-        except:
-            return 0
-
-    def check_time_filter(self):
-        now = datetime.now()
-        hour = now.hour
-        if self.learning_stats:
-            best = self.learning_stats.get('best_hours', [])
-            worst = self.learning_stats.get('worst_hours', [])
-            if best and hour not in best:
-                return False
-            if worst and hour in worst:
-                return False
-        return True
+        return 100 - (100 / (1 + rs)).iloc[-1]
 
     def _get_financial_calendar(self):
         events = [
-            {"date": "2024-11-06", "time": "14:00", "event": "FOMC Interest Rate Decision", "importance": "high"},
-            {"date": "2024-12-18", "time": "14:00", "event": "FOMC Interest Rate Decision", "importance": "high"},
-            {"date": "2024-11-01", "time": "13:30", "event": "Non-Farm Payrolls (NFP)", "importance": "high"},
-            {"date": "2024-12-06", "time": "13:30", "event": "Non-Farm Payrolls (NFP)", "importance": "high"},
-            {"date": "2024-11-13", "time": "13:30", "event": "CPI Inflation Data", "importance": "high"},
-            {"date": "2024-12-11", "time": "13:30", "event": "CPI Inflation Data", "importance": "high"},
-            {"date": "2024-11-14", "time": "13:30", "event": "PPI Producer Price Index", "importance": "medium"},
+            {"date": "2024-11-06", "time": "14:00", "event": "FOMC Interest Rate", "importance": "high"},
+            {"date": "2024-12-18", "time": "14:00", "event": "FOMC Interest Rate", "importance": "high"},
+            {"date": "2024-11-01", "time": "13:30", "event": "NFP", "importance": "high"},
+            {"date": "2024-12-06", "time": "13:30", "event": "NFP", "importance": "high"},
+            {"date": "2024-11-13", "time": "13:30", "event": "CPI", "importance": "high"},
+            {"date": "2024-12-11", "time": "13:30", "event": "CPI", "importance": "high"},
         ]
         today = datetime.now().strftime('%Y-%m-%d')
         return [e for e in events if e['date'] >= today]
@@ -317,15 +266,13 @@ class IATSStrategyAI:
         result = self.ai.analyze('news', news_data)
         if result and not result.get('error'):
             if result.get('should_pause_trading', False) and result.get('impact') in ['high', 'medium']:
-                pause_before = result.get('pause_before_minutes', 60)
-                pause_after = result.get('pause_after_minutes', 30)
                 self.trading_paused = True
-                self.pause_reason = f"Важные новости: {', '.join(result.get('news_items', []))}"
-                self.pause_until = datetime.now() + timedelta(minutes=pause_before + pause_after + 10)
+                self.pause_reason = f"Новости: {', '.join(result.get('news_items', []))}"
+                self.pause_until = datetime.now() + timedelta(minutes=result.get('pause_before_minutes', 60) +
+                                                              result.get('pause_after_minutes', 30) + 10)
                 st.session_state.logs.append(f"⏸️ Пауза: {self.pause_reason}")
             else:
                 self.trading_paused = False
-                self.pause_reason = ""
                 self.pause_until = None
 
     def check_ai_trend(self):
@@ -334,93 +281,16 @@ class IATSStrategyAI:
         df = self.fetch_ohlcv(100)
         if df.empty:
             return
-        indicators = self.calculate_indicators(df)
-        market_data = {
-            "price": df['close'].iloc[-1],
-            "sma20": indicators.get('sma20'),
-            "sma50": indicators.get('sma50'),
-            "rsi": indicators.get('rsi'),
-            "volatility": indicators.get('volatility'),
-            "volume": indicators.get('volume'),
-            "price_change_1h": indicators.get('price_change_1h'),
-            "price_change_24h": indicators.get('price_change_24h'),
-            "last_10_returns": df['close'].pct_change().tail(10).tolist()
-        }
-        result = self.ai.analyze('trend', market_data)
+        ind = self.calculate_indicators(df)
+        data = {"price": df['close'].iloc[-1], "rsi": ind.get('rsi'), "volatility": ind.get('volatility')}
+        result = self.ai.analyze('trend', data)
         if result and not result.get('error'):
             self.ai_suggestions = result
-            st.session_state.logs.append(f"🧠 AI: тренд {result.get('trend')}, уверенность {result.get('confidence')}%")
             if result.get('suggested_sl_ticks'):
                 self.config['sl_ticks'] = int(result['suggested_sl_ticks'])
             if result.get('suggested_avg_step'):
                 self.config['averaging_step_ticks'] = int(result['suggested_avg_step'])
-            if result.get('suggested_risk'):
-                self.config['risk_percent'] = float(result['suggested_risk'])
-            return result
-        return None
-
-    def check_ai_sentiment(self):
-        if not self.ai.api_key:
-            return
-        df = self.fetch_ohlcv(50)
-        if df.empty:
-            return
-        indicators = self.calculate_indicators(df)
-        sentiment_data = {
-            "price": df['close'].iloc[-1],
-            "high_24h": df['high'].max(),
-            "low_24h": df['low'].min(),
-            "volume": indicators.get('volume'),
-            "volatility": indicators.get('volatility'),
-            "rsi": indicators.get('rsi'),
-            "price_change_1h": indicators.get('price_change_1h'),
-            "price_change_24h": indicators.get('price_change_24h')
-        }
-        result = self.ai.analyze('sentiment', sentiment_data)
-        if result and not result.get('error'):
-            st.session_state.logs.append(f"🧠 AI: настроение {result.get('overall_sentiment')}, страх/жадность {result.get('fear_greed_index', 50)}")
-            return result
-        return None
-
-    def check_ai_learning(self):
-        if not self.ai.api_key or len(self.trade_history) < 10:
-            return
-        learning_data = {
-            "total_trades": len(self.trade_history),
-            "winrate": sum(1 for t in self.trade_history if t.get('profit', 0) > 0) / len(self.trade_history) * 100,
-            "avg_profit": sum(t.get('profit', 0) for t in self.trade_history) / len(self.trade_history),
-            "best_profit": max((t.get('profit', 0) for t in self.trade_history), default=0),
-            "worst_loss": min((t.get('profit', 0) for t in self.trade_history), default=0),
-            "trades_by_hour": self._get_trades_by_hour(),
-            "avg_entries": self.averaging_count,
-            "reverses": self.reverse_count
-        }
-        result = self.ai.analyze('learn', learning_data)
-        if result and not result.get('error'):
-            self.learning_stats = result
-            self.best_hours = result.get('best_time_to_trade', [])
-            self.worst_hours = result.get('worst_time_to_trade', [])
-            st.session_state.logs.append(f"🧠 AI: обучение завершено, лучшие часы {self.best_hours}")
-
-    def _get_trades_by_hour(self):
-        hours = {}
-        for trade in self.trade_history:
-            hour = trade.get('hour', 0)
-            profit = trade.get('profit', 0)
-            if hour not in hours:
-                hours[hour] = {'count': 0, 'profit': 0}
-            hours[hour]['count'] += 1
-            hours[hour]['profit'] += profit
-        best_hours = []
-        worst_hours = []
-        for hour, data in hours.items():
-            if data['count'] >= 2:
-                avg_profit = data['profit'] / data['count']
-                if avg_profit > 10:
-                    best_hours.append(hour)
-                elif avg_profit < -5:
-                    worst_hours.append(hour)
-        return {'best_hours': best_hours, 'worst_hours': worst_hours, 'all': hours}
+            st.session_state.logs.append(f"🧠 AI: тренд {result.get('trend')}, уверенность {result.get('confidence')}%")
 
     def adapt_strategy_to_market(self):
         if not self.ai.api_key:
@@ -428,65 +298,38 @@ class IATSStrategyAI:
         df = self.fetch_ohlcv(50)
         if df.empty:
             return
-        indicators = self.calculate_indicators(df)
-        market_state = {
-            "volatility": indicators.get('volatility'),
-            "rsi": indicators.get('rsi'),
-            "volume": indicators.get('volume'),
-            "trend": self.ai_suggestions.get('trend', 'neutral') if self.ai_suggestions else 'unknown',
-            "current_price": df['close'].iloc[-1],
-            "balance": self.get_balance('USDT')
-        }
-        result = self.ai.analyze('market_state', market_state)
+        ind = self.calculate_indicators(df)
+        state = {"volatility": ind.get('volatility'), "rsi": ind.get('rsi'), "balance": self.get_balance('USDT')}
+        result = self.ai.analyze('market_state', state)
         if result and not result.get('error'):
-            if result.get('risk_percent'):
-                self.config['risk_percent'] = float(result['risk_percent'])
-            if result.get('max_lot'):
-                self.config['max_lot'] = float(result['max_lot'])
-            if result.get('sl_ticks'):
-                self.config['sl_ticks'] = int(result['sl_ticks'])
-            if result.get('avg_step'):
-                self.config['averaging_step_ticks'] = int(result['avg_step'])
-            if result.get('avg_coefficient'):
-                self.config['averaging_coefficient'] = float(result['avg_coefficient'])
-            if result.get('trailing_distance'):
-                self.config['trailing_distance_ticks'] = int(result['trailing_distance'])
-            if result.get('max_averaging'):
-                self.config['max_averaging'] = int(result['max_averaging'])
-            st.session_state.logs.append(f"🧠 AI: адаптировал стратегию к рынку (уверенность {result.get('confidence', 50)}%)")
+            for key in ['risk_percent', 'max_lot', 'sl_ticks', 'avg_step', 'avg_coefficient', 'trailing_distance', 'max_averaging']:
+                if result.get(key):
+                    self.config[key] = float(result[key]) if key != 'sl_ticks' else int(result[key])
+            st.session_state.logs.append(f"🧠 AI: адаптировал параметры")
 
     def calculate_lot(self, side, entry_price, stop_loss_price):
-        balance_usdt = self.get_balance('USDT')
-        risk_amount = balance_usdt * (self.config.get('risk_percent', 1.0) / 100.0)
-        price_diff = abs(entry_price - stop_loss_price)
-        if price_diff == 0:
+        balance = self.get_balance('USDT')
+        risk = balance * (self.config.get('risk_percent', 1.0) / 100.0)
+        diff = abs(entry_price - stop_loss_price)
+        if diff == 0:
             return 0.0
-        lot = risk_amount / price_diff
+        lot = risk / diff
         step = self.exchange.market(self.symbol)['precision']['amount']
         lot = math.floor(lot / step) * step
-        if lot > self.config.get('max_lot', 0.01):
-            lot = self.config.get('max_lot', 0.01)
-        if lot < self.exchange.market(self.symbol)['limits']['amount']['min']:
-            lot = 0.0
-        return lot
+        lot = min(lot, self.config.get('max_lot', 0.01))
+        lot = max(lot, self.exchange.market(self.symbol)['limits']['amount']['min'])
+        return lot if lot > 0 else 0.0
 
-    def place_order(self, side, amount, order_type='market', stop_loss=None, take_profit=None):
+    def place_order(self, side, amount):
         try:
-            params = {}
-            if stop_loss:
-                params['stopLoss'] = {'stopPrice': stop_loss}
-            if take_profit:
-                params['takeProfit'] = {'limitPrice': take_profit}
-            order = self.exchange.create_market_order(self.symbol, side, amount, params=params)
-            return order
+            return self.exchange.create_market_order(self.symbol, side, amount)
         except Exception as e:
             st.session_state.logs.append(f"❌ Ошибка ордера: {e}")
             return None
 
     def close_position(self, side, volume):
         try:
-            order = self.exchange.create_market_order(self.symbol, side, volume)
-            return order
+            return self.exchange.create_market_order(self.symbol, side, volume)
         except Exception as e:
             st.session_state.logs.append(f"❌ Ошибка закрытия: {e}")
             return None
@@ -495,38 +338,26 @@ class IATSStrategyAI:
         now = datetime.now()
         if now.second % 2 != 0:
             return False
-        if self.trading_paused:
-            if self.pause_until and datetime.now() < self.pause_until:
-                return False
-            else:
-                self.trading_paused = False
-                self.pause_reason = ""
-        if not self.check_time_filter():
+        if self.trading_paused and self.pause_until and now < self.pause_until:
             return False
-        if self.ai_suggestions:
-            next_move = self.ai_suggestions.get('next_move', 'wait')
-            if next_move == 'wait':
-                return False
-            if next_move == 'sell' and self.ai_suggestions.get('trend') == 'up':
-                return False
-            if next_move == 'buy' and self.ai_suggestions.get('trend') == 'down':
-                return False
+        if self.trading_paused:
+            self.trading_paused = False
+            self.pause_reason = ""
+        if self.ai_suggestions.get('next_move') == 'wait':
+            return False
         return True
 
     def _close_trade(self, profit):
         if not self.position:
             return
-        trade_data = {
+        self.trade_history.append({
             'time': datetime.now(),
             'symbol': self.symbol,
             'side': self.position['side'],
             'volume': self.position['volume'],
             'profit': profit,
-            'hour': datetime.now().hour,
-            'avg_count': self.averaging_count,
-            'is_reversed': self.is_reversed
-        }
-        self.trade_history.append(trade_data)
+            'hour': datetime.now().hour
+        })
         new_row = pd.DataFrame({
             'time': [datetime.now()],
             'symbol': [self.symbol],
@@ -534,19 +365,10 @@ class IATSStrategyAI:
             'volume': [self.position['volume']],
             'profit': [profit]
         })
-        if st.session_state.history_data.empty:
-            st.session_state.history_data = new_row
-        else:
-            st.session_state.history_data = pd.concat([st.session_state.history_data, new_row], ignore_index=True)
-        current_equity = st.session_state.balance + st.session_state.history_data['profit'].sum()
-        eq_row = pd.DataFrame({
-            'time': [datetime.now()],
-            'equity': [current_equity]
-        })
-        if st.session_state.equity_data.empty:
-            st.session_state.equity_data = eq_row
-        else:
-            st.session_state.equity_data = pd.concat([st.session_state.equity_data, eq_row], ignore_index=True)
+        st.session_state.history_data = pd.concat([st.session_state.history_data, new_row], ignore_index=True)
+        eq = st.session_state.balance + st.session_state.history_data['profit'].sum()
+        eq_row = pd.DataFrame({'time': [datetime.now()], 'equity': [eq]})
+        st.session_state.equity_data = pd.concat([st.session_state.equity_data, eq_row], ignore_index=True)
 
     def tick(self):
         now = datetime.now()
@@ -554,13 +376,7 @@ class IATSStrategyAI:
             self.ai_last_update = now
             self.check_ai_news()
             self.check_ai_trend()
-            self.check_ai_sentiment()
             self.adapt_strategy_to_market()
-            if len(self.trade_history) > 10 and (now.minute == 0):
-                self.check_ai_learning()
-
-        if self.trading_paused and self.pause_until and now < self.pause_until:
-            pass
 
         current_price = self.get_current_price()
         st.session_state.current_price = current_price
@@ -570,83 +386,63 @@ class IATSStrategyAI:
                 sl_price = current_price - self.config.get('sl_ticks', 30) * self.tick_size
                 lot = self.calculate_lot('buy', current_price, sl_price)
                 if lot > 0:
-                    st.session_state.logs.append(f"🟢 Вход: покупаем {lot} {self.symbol.split('/')[0]} по {current_price}")
+                    st.session_state.logs.append(f"🟢 Вход: покупаем {lot} по {current_price}")
                     if not st.session_state.dry_run:
                         order = self.place_order('buy', lot)
                         if order:
-                            self.position = {
-                                'side': 'buy',
-                                'entry_price': current_price,
-                                'avg_price': current_price,
-                                'volume': lot
-                            }
+                            self.position = {'side': 'buy', 'entry_price': current_price, 'avg_price': current_price, 'volume': lot}
                             self.averaging_count = 0
                             self.is_reversed = False
                             self.trailing_active = False
-                            self.last_entry_time = time.time()
-                            st.session_state.logs.append(f"✅ Позиция открыта")
+                            st.session_state.logs.append("✅ Позиция открыта")
                     else:
-                        self.position = {
-                            'side': 'buy',
-                            'entry_price': current_price,
-                            'avg_price': current_price,
-                            'volume': lot
-                        }
-                        st.session_state.logs.append(f"🧪 [DRY] Позиция открыта")
+                        self.position = {'side': 'buy', 'entry_price': current_price, 'avg_price': current_price, 'volume': lot}
+                        st.session_state.logs.append("🧪 [DRY] Позиция открыта")
             return
 
         side = self.position['side']
-        avg_price = self.position['avg_price']
-        volume = self.position['volume']
-
-        if side == 'buy':
-            profit_usdt = (current_price - avg_price) * volume
-        else:
-            profit_usdt = (avg_price - current_price) * volume
+        avg = self.position['avg_price']
+        vol = self.position['volume']
+        profit_usdt = (current_price - avg) * vol if side == 'buy' else (avg - current_price) * vol
         st.session_state.pnl = profit_usdt
-
         is_profit = profit_usdt >= 0
-        apply_stop_and_trailing = not (self.trading_paused and not is_profit)
+        apply_stop = not (self.trading_paused and not is_profit)
 
-        if not apply_stop_and_trailing:
-            st.session_state.logs.append(f"🛡️ Пауза: позиция убыточная ({profit_usdt:.2f}), стоп и трейлинг отключены")
-
-        if apply_stop_and_trailing:
+        # Стоп-лосс
+        if apply_stop:
             if side == 'buy':
-                sl_price = avg_price - self.config.get('sl_ticks', 30) * self.tick_size
-                if current_price <= sl_price:
-                    st.session_state.logs.append(f"🔴 Стоп-лосс сработал! Цена {current_price}, SL {sl_price}")
-                    self.close_position('sell', volume)
+                sl = avg - self.config.get('sl_ticks', 30) * self.tick_size
+                if current_price <= sl:
+                    st.session_state.logs.append(f"🔴 Стоп-лосс! Цена {current_price}")
+                    self.close_position('sell', vol)
                     self._close_trade(profit_usdt)
                     self.position = None
                     return
             else:
-                sl_price = avg_price + self.config.get('sl_ticks', 30) * self.tick_size
-                if current_price >= sl_price:
-                    st.session_state.logs.append(f"🔴 Стоп-лосс сработал! Цена {current_price}, SL {sl_price}")
-                    self.close_position('buy', volume)
+                sl = avg + self.config.get('sl_ticks', 30) * self.tick_size
+                if current_price >= sl:
+                    st.session_state.logs.append(f"🔴 Стоп-лосс! Цена {current_price}")
+                    self.close_position('buy', vol)
                     self._close_trade(profit_usdt)
                     self.position = None
                     return
 
-        if apply_stop_and_trailing and self.config.get('enable_trailing', True):
+        # Трейлинг
+        if apply_stop and self.config.get('enable_trailing', True):
             if not self.trailing_active:
-                profit_ticks = (current_price - avg_price) / self.tick_size if side == 'buy' else (avg_price - current_price) / self.tick_size
+                profit_ticks = (current_price - avg) / self.tick_size if side == 'buy' else (avg - current_price) / self.tick_size
                 if profit_ticks >= self.config.get('trailing_distance_ticks', 40):
                     self.trailing_active = True
-                    if side == 'buy':
-                        self.trailing_level = current_price - self.config.get('trailing_distance_ticks', 40) * self.tick_size
-                    else:
-                        self.trailing_level = current_price + self.config.get('trailing_distance_ticks', 40) * self.tick_size
-                    st.session_state.logs.append(f"🟡 Трейлинг активирован, уровень {self.trailing_level}")
+                    self.trailing_level = current_price - self.config.get('trailing_distance_ticks', 40) * self.tick_size if side == 'buy' else current_price + self.config.get('trailing_distance_ticks', 40) * self.tick_size
+                    st.session_state.logs.append(f"🟡 Трейлинг активирован")
             else:
                 if side == 'buy':
                     new_level = current_price - self.config.get('trailing_distance_ticks', 40) * self.tick_size
                     if new_level > self.trailing_level:
                         self.trailing_level = new_level
                     if current_price <= self.trailing_level:
-                        st.session_state.logs.append(f"🟡 Трейлинг сработал! Цена {current_price}")
-                        self.close_position('sell', volume)
+                        st.session_state.logs.append(f"🟡 Трейлинг сработал!")
+                        self.close_position('sell', vol)
                         self._close_trade(profit_usdt)
                         self.position = None
                         return
@@ -655,168 +451,126 @@ class IATSStrategyAI:
                     if new_level < self.trailing_level:
                         self.trailing_level = new_level
                     if current_price >= self.trailing_level:
-                        st.session_state.logs.append(f"🟡 Трейлинг сработал! Цена {current_price}")
-                        self.close_position('buy', volume)
+                        st.session_state.logs.append(f"🟡 Трейлинг сработал!")
+                        self.close_position('buy', vol)
                         self._close_trade(profit_usdt)
                         self.position = None
                         return
 
+        # Усреднение
         if self.averaging_count < self.config.get('max_averaging', 4):
             step = self.config.get('averaging_step_ticks', 60) * (self.averaging_count + 1) * self.tick_size
-            if side == 'buy':
-                if current_price <= avg_price - step:
-                    new_lot = self.calculate_lot('buy', current_price, current_price - self.config.get('sl_ticks', 30) * self.tick_size)
-                    if new_lot > 0:
-                        st.session_state.logs.append(f"🔄 Усреднение #{self.averaging_count+1}: покупаем {new_lot}")
-                        if not st.session_state.dry_run:
-                            order = self.place_order('buy', new_lot)
-                            if order:
-                                total_volume = volume + new_lot
-                                new_avg = (avg_price * volume + current_price * new_lot) / total_volume
-                                self.position['avg_price'] = new_avg
-                                self.position['volume'] = total_volume
-                                self.averaging_count += 1
-                                st.session_state.logs.append(f"✅ Новая средняя: {new_avg}")
-                        else:
-                            total_volume = volume + new_lot
-                            new_avg = (avg_price * volume + current_price * new_lot) / total_volume
+            if side == 'buy' and current_price <= avg - step:
+                new_lot = self.calculate_lot('buy', current_price, current_price - self.config.get('sl_ticks', 30) * self.tick_size)
+                if new_lot > 0:
+                    st.session_state.logs.append(f"🔄 Усреднение #{self.averaging_count+1}")
+                    if not st.session_state.dry_run:
+                        order = self.place_order('buy', new_lot)
+                        if order:
+                            total_vol = vol + new_lot
+                            new_avg = (avg * vol + current_price * new_lot) / total_vol
                             self.position['avg_price'] = new_avg
-                            self.position['volume'] = total_volume
+                            self.position['volume'] = total_vol
                             self.averaging_count += 1
-                            st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
-            else:
-                if current_price >= avg_price + step:
-                    new_lot = self.calculate_lot('sell', current_price, current_price + self.config.get('sl_ticks', 30) * self.tick_size)
-                    if new_lot > 0:
-                        st.session_state.logs.append(f"🔄 Усреднение #{self.averaging_count+1}: продаём {new_lot}")
-                        if not st.session_state.dry_run:
-                            order = self.place_order('sell', new_lot)
-                            if order:
-                                total_volume = volume + new_lot
-                                new_avg = (avg_price * volume + current_price * new_lot) / total_volume
-                                self.position['avg_price'] = new_avg
-                                self.position['volume'] = total_volume
-                                self.averaging_count += 1
-                                st.session_state.logs.append(f"✅ Новая средняя: {new_avg}")
-                        else:
-                            total_volume = volume + new_lot
-                            new_avg = (avg_price * volume + current_price * new_lot) / total_volume
+                            st.session_state.logs.append(f"✅ Новая средняя: {new_avg}")
+                    else:
+                        total_vol = vol + new_lot
+                        new_avg = (avg * vol + current_price * new_lot) / total_vol
+                        self.position['avg_price'] = new_avg
+                        self.position['volume'] = total_vol
+                        self.averaging_count += 1
+                        st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
+            elif side == 'sell' and current_price >= avg + step:
+                new_lot = self.calculate_lot('sell', current_price, current_price + self.config.get('sl_ticks', 30) * self.tick_size)
+                if new_lot > 0:
+                    st.session_state.logs.append(f"🔄 Усреднение #{self.averaging_count+1}")
+                    if not st.session_state.dry_run:
+                        order = self.place_order('sell', new_lot)
+                        if order:
+                            total_vol = vol + new_lot
+                            new_avg = (avg * vol + current_price * new_lot) / total_vol
                             self.position['avg_price'] = new_avg
-                            self.position['volume'] = total_volume
+                            self.position['volume'] = total_vol
                             self.averaging_count += 1
-                            st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
+                            st.session_state.logs.append(f"✅ Новая средняя: {new_avg}")
+                    else:
+                        total_vol = vol + new_lot
+                        new_avg = (avg * vol + current_price * new_lot) / total_vol
+                        self.position['avg_price'] = new_avg
+                        self.position['volume'] = total_vol
+                        self.averaging_count += 1
+                        st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
 
-        if not self.trading_paused or is_profit:
-            if self.averaging_count >= self.config.get('max_averaging', 4) and not self.is_reversed and self.reverse_count < self.config.get('max_reverses', 3):
-                if side == 'buy' and current_price <= avg_price - 15 * self.tick_size:
-                    st.session_state.logs.append(f"🔄 Переворот: закрываем BUY, открываем SELL")
-                    self.close_position('sell', volume)
-                    self._close_trade(profit_usdt)
-                    new_lot = self.calculate_lot('sell', current_price, current_price + self.config.get('sl_ticks', 30) * self.tick_size)
-                    if new_lot > 0:
-                        if not st.session_state.dry_run:
-                            order = self.place_order('sell', new_lot)
-                            if order:
-                                self.position = {
-                                    'side': 'sell',
-                                    'entry_price': current_price,
-                                    'avg_price': current_price,
-                                    'volume': new_lot
-                                }
-                                self.averaging_count = 0
-                                self.is_reversed = True
-                                self.reverse_count += 1
-                                self.trailing_active = False
-                                st.session_state.logs.append(f"✅ Переворот выполнен")
-                        else:
-                            self.position = {
-                                'side': 'sell',
-                                'entry_price': current_price,
-                                'avg_price': current_price,
-                                'volume': new_lot
-                            }
+        # Переворот
+        if (not self.trading_paused or is_profit) and self.averaging_count >= self.config.get('max_averaging', 4) and not self.is_reversed and self.reverse_count < self.config.get('max_reverses', 3):
+            if side == 'buy' and current_price <= avg - 15 * self.tick_size:
+                st.session_state.logs.append("🔄 Переворот BUY→SELL")
+                self.close_position('sell', vol)
+                self._close_trade(profit_usdt)
+                new_lot = self.calculate_lot('sell', current_price, current_price + self.config.get('sl_ticks', 30) * self.tick_size)
+                if new_lot > 0:
+                    if not st.session_state.dry_run:
+                        order = self.place_order('sell', new_lot)
+                        if order:
+                            self.position = {'side': 'sell', 'entry_price': current_price, 'avg_price': current_price, 'volume': new_lot}
                             self.averaging_count = 0
                             self.is_reversed = True
                             self.reverse_count += 1
                             self.trailing_active = False
-                            st.session_state.logs.append(f"🧪 [DRY] Переворот выполнен")
-                elif side == 'sell' and current_price >= avg_price + 15 * self.tick_size:
-                    st.session_state.logs.append(f"🔄 Переворот: закрываем SELL, открываем BUY")
-                    self.close_position('buy', volume)
-                    self._close_trade(profit_usdt)
-                    new_lot = self.calculate_lot('buy', current_price, current_price - self.config.get('sl_ticks', 30) * self.tick_size)
-                    if new_lot > 0:
-                        if not st.session_state.dry_run:
-                            order = self.place_order('buy', new_lot)
-                            if order:
-                                self.position = {
-                                    'side': 'buy',
-                                    'entry_price': current_price,
-                                    'avg_price': current_price,
-                                    'volume': new_lot
-                                }
-                                self.averaging_count = 0
-                                self.is_reversed = True
-                                self.reverse_count += 1
-                                self.trailing_active = False
-                                st.session_state.logs.append(f"✅ Переворот выполнен")
-                        else:
-                            self.position = {
-                                'side': 'buy',
-                                'entry_price': current_price,
-                                'avg_price': current_price,
-                                'volume': new_lot
-                            }
+                            st.session_state.logs.append("✅ Переворот выполнен")
+                    else:
+                        self.position = {'side': 'sell', 'entry_price': current_price, 'avg_price': current_price, 'volume': new_lot}
+                        self.averaging_count = 0
+                        self.is_reversed = True
+                        self.reverse_count += 1
+                        self.trailing_active = False
+                        st.session_state.logs.append("🧪 [DRY] Переворот выполнен")
+            elif side == 'sell' and current_price >= avg + 15 * self.tick_size:
+                st.session_state.logs.append("🔄 Переворот SELL→BUY")
+                self.close_position('buy', vol)
+                self._close_trade(profit_usdt)
+                new_lot = self.calculate_lot('buy', current_price, current_price - self.config.get('sl_ticks', 30) * self.tick_size)
+                if new_lot > 0:
+                    if not st.session_state.dry_run:
+                        order = self.place_order('buy', new_lot)
+                        if order:
+                            self.position = {'side': 'buy', 'entry_price': current_price, 'avg_price': current_price, 'volume': new_lot}
                             self.averaging_count = 0
                             self.is_reversed = True
                             self.reverse_count += 1
                             self.trailing_active = False
-                            st.session_state.logs.append(f"🧪 [DRY] Переворот выполнен")
+                            st.session_state.logs.append("✅ Переворот выполнен")
+                    else:
+                        self.position = {'side': 'buy', 'entry_price': current_price, 'avg_price': current_price, 'volume': new_lot}
+                        self.averaging_count = 0
+                        self.is_reversed = True
+                        self.reverse_count += 1
+                        self.trailing_active = False
+                        st.session_state.logs.append("🧪 [DRY] Переворот выполнен")
 
 # ============================================================
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ
 # ============================================================
-if 'mode' not in st.session_state:
-    st.session_state.mode = 'demo'
-if 'status' not in st.session_state:
-    st.session_state.status = 'stopped'
-if 'dry_run' not in st.session_state:
-    st.session_state.dry_run = True
-if 'logs' not in st.session_state:
-    st.session_state.logs = []
-if 'current_price' not in st.session_state:
-    st.session_state.current_price = 0
-if 'balance' not in st.session_state:
-    st.session_state.balance = 0
-if 'position' not in st.session_state:
-    st.session_state.position = None
-if 'pnl' not in st.session_state:
-    st.session_state.pnl = 0
-if 'history_data' not in st.session_state:
-    st.session_state.history_data = pd.DataFrame(columns=['time', 'symbol', 'side', 'volume', 'profit'])
-if 'equity_data' not in st.session_state:
-    st.session_state.equity_data = pd.DataFrame(columns=['time', 'equity'])
-if 'selected_symbol' not in st.session_state:
-    st.session_state.selected_symbol = 'BTC/USDT'
-if 'strategy' not in st.session_state:
-    st.session_state.strategy = None
-if 'exchange' not in st.session_state:
-    st.session_state.exchange = None
-if 'bot_thread' not in st.session_state:
-    st.session_state.bot_thread = None
-if 'running' not in st.session_state:
-    st.session_state.running = False
-if 'ai_assistant' not in st.session_state:
-    st.session_state.ai_assistant = DeepSeekAIAssistant()
-if 'ai_status' not in st.session_state:
-    st.session_state.ai_status = 'idle'
-if 'thread_started' not in st.session_state:
-    st.session_state.thread_started = False
+for key in ['mode', 'status', 'dry_run', 'logs', 'current_price', 'balance', 'position', 'pnl',
+            'history_data', 'equity_data', 'selected_symbol', 'strategy', 'exchange',
+            'running', 'ai_assistant', 'thread_started']:
+    if key not in st.session_state:
+        if key == 'history_data' or key == 'equity_data':
+            st.session_state[key] = pd.DataFrame(columns=['time', 'symbol', 'side', 'volume', 'profit'] if key == 'history_data' else ['time', 'equity'])
+        elif key == 'selected_symbol':
+            st.session_state[key] = 'BTC/USDT'
+        elif key == 'ai_assistant':
+            st.session_state[key] = DeepSeekAIAssistant()
+        elif key == 'thread_started':
+            st.session_state[key] = False
+        else:
+            st.session_state[key] = False if key in ['dry_run', 'running'] else (0 if key in ['balance', 'current_price', 'pnl'] else ('demo' if key == 'mode' else ('stopped' if key == 'status' else [] if key == 'logs' else None)))
 
+# === ДОСТУПНЫЕ СИМВОЛЫ ===
 SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
 
 # ============================================================
-# ФУНКЦИИ ЗАГРУЗКИ ДАННЫХ
+# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ
 # ============================================================
 @st.cache_data(ttl=60)
 def fetch_ohlcv(symbol, timeframe='1m', limit=100):
@@ -828,17 +582,14 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=100):
         return df
     except:
         dates = pd.date_range(end=datetime.now(), periods=100, freq='1min')
-        base_price = 60000 if 'BTC' in symbol else (3000 if 'ETH' in symbol else (150 if 'SOL' in symbol else 0.5))
+        base = 60000 if 'BTC' in symbol else 3000 if 'ETH' in symbol else 150 if 'SOL' in symbol else 0.5
         np.random.seed(42 + hash(symbol) % 100)
-        close = base_price + np.cumsum(np.random.randn(100) * base_price * 0.001)
-        high = close + np.random.rand(100) * base_price * 0.002
-        low = close - np.random.rand(100) * base_price * 0.002
-        open_price = close - np.random.rand(100) * base_price * 0.001
+        close = base + np.cumsum(np.random.randn(100) * base * 0.001)
         return pd.DataFrame({
             'timestamp': dates,
-            'open': open_price,
-            'high': high,
-            'low': low,
+            'open': close - np.random.rand(100) * base * 0.001,
+            'high': close + np.random.rand(100) * base * 0.002,
+            'low': close - np.random.rand(100) * base * 0.002,
             'close': close,
             'volume': np.random.randint(10, 100, 100)
         })
@@ -849,39 +600,33 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=100):
 st.markdown('<div class="main-header">🧠 HOVMEL IATS v5.1 — AI ШЕДЕВР</div>', unsafe_allow_html=True)
 
 col_status1, col_status2, col_status3, col_status4, col_status5, col_status6 = st.columns(6)
-
 with col_status1:
     mode_text = "🟢 ДЕМО" if st.session_state.mode == 'demo' else "🔴 РЕАЛ"
     mode_class = "status-demo" if st.session_state.mode == 'demo' else "status-real"
     st.markdown(f'<div class="{mode_class}">{mode_text}</div>', unsafe_allow_html=True)
-
 with col_status2:
     if st.session_state.status == 'stopped':
-        status_class = "status-stopped"
-        status_text = "⏹ СТОП"
+        s_class = "status-stopped"
+        s_text = "⏹ СТОП"
     elif st.session_state.strategy and st.session_state.strategy.trading_paused:
-        status_class = "status-paused"
-        status_text = "⏸ ПАУЗА"
+        s_class = "status-paused"
+        s_text = "⏸ ПАУЗА"
     else:
-        status_class = "status-running"
-        status_text = "▶ РАБОТАЕТ"
-    st.markdown(f'<div class="{status_class}">{status_text}</div>', unsafe_allow_html=True)
-
+        s_class = "status-running"
+        s_text = "▶ РАБОТАЕТ"
+    st.markdown(f'<div class="{s_class}">{s_text}</div>', unsafe_allow_html=True)
 with col_status3:
     dry_text = "🧪 DRY" if st.session_state.dry_run else "💪 REAL"
     st.markdown(f'<div class="status-stopped" style="background:#4466aa;">{dry_text}</div>', unsafe_allow_html=True)
-
 with col_status4:
-    ai_status_text = "🧠 AI: ON" if st.session_state.ai_assistant.api_key else "🧠 AI: OFF"
-    st.markdown(f'<div class="status-ai">{ai_status_text}</div>', unsafe_allow_html=True)
-
+    ai_status = "🧠 AI: ON" if st.session_state.ai_assistant.api_key else "🧠 AI: OFF"
+    st.markdown(f'<div class="status-ai">{ai_status}</div>', unsafe_allow_html=True)
 with col_status5:
     st.markdown(f'<div style="color:#888; font-size:14px;">{st.session_state.selected_symbol}</div>', unsafe_allow_html=True)
-
 with col_status6:
     st.markdown(f'<div style="text-align:right;color:#888;">{datetime.now().strftime("%H:%M:%S")}</div>', unsafe_allow_html=True)
 
-col_sym1, col_sym2 = st.columns([2, 10])
+col_sym1, _ = st.columns([2, 10])
 with col_sym1:
     new_symbol = st.selectbox("Инструмент", SYMBOLS, index=SYMBOLS.index(st.session_state.selected_symbol))
     if new_symbol != st.session_state.selected_symbol:
@@ -897,7 +642,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Торговля", "📋 Журнал", 
 with tab1:
     df = fetch_ohlcv(st.session_state.selected_symbol)
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-                         row_heights=[0.7, 0.3], subplot_titles=(f'{st.session_state.selected_symbol} - Свечи', 'Объём'))
+                         row_heights=[0.7, 0.3], subplot_titles=(f'{st.session_state.selected_symbol}', 'Объём'))
     fig.add_trace(go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
                                    name=st.session_state.selected_symbol, increasing_line_color='#00ff88', decreasing_line_color='#ff4444'), row=1, col=1)
     df['sma20'] = df['close'].rolling(20).mean()
@@ -905,10 +650,10 @@ with tab1:
     fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma20'], line=dict(color='#ffaa00', width=1.5), name='SMA 20'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='#4488ff', width=1.5), name='SMA 50'), row=1, col=1)
     if st.session_state.position:
-        entry_price = st.session_state.position.get('entry_price', 0)
-        avg_price = st.session_state.position.get('avg_price', entry_price)
-        fig.add_hline(y=entry_price, line=dict(color='#ffd700', width=1, dash='dash'), annotation_text=f'Entry: {entry_price:.1f}', annotation_position='top left', row=1, col=1)
-        fig.add_hline(y=avg_price, line=dict(color='#ff8800', width=1.5, dash='dashdot'), annotation_text=f'Avg: {avg_price:.1f}', annotation_position='bottom left', row=1, col=1)
+        entry = st.session_state.position.get('entry_price', 0)
+        avg = st.session_state.position.get('avg_price', entry)
+        fig.add_hline(y=entry, line=dict(color='#ffd700', width=1, dash='dash'), annotation_text=f'Entry: {entry:.1f}', row=1, col=1)
+        fig.add_hline(y=avg, line=dict(color='#ff8800', width=1.5, dash='dashdot'), annotation_text=f'Avg: {avg:.1f}', row=1, col=1)
     fig.add_trace(go.Bar(x=df['timestamp'], y=df['volume'], name='Volume', marker_color='#4466aa', opacity=0.6), row=2, col=1)
     fig.update_layout(template='plotly_dark', height=550, showlegend=True, hovermode='x unified',
                       paper_bgcolor='#0d0d1a', plot_bgcolor='#0d0d1a', margin=dict(l=10, r=10, t=40, b=10),
@@ -992,19 +737,19 @@ with tab1:
 
     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
     with col_m1:
-        st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">💰 Баланс USDT</div><div class="metric-value metric-green">{st.session_state.balance:.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div style="color:#888;">💰 Баланс</div><div class="metric-value metric-green">{st.session_state.balance:.2f}</div></div>', unsafe_allow_html=True)
     with col_m2:
         color = 'metric-green' if st.session_state.pnl >= 0 else 'metric-red'
-        st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">📈 P&L</div><div class="metric-value {color}">{st.session_state.pnl:.2f} USDT</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div style="color:#888;">📈 P&L</div><div class="metric-value {color}">{st.session_state.pnl:.2f}</div></div>', unsafe_allow_html=True)
     with col_m3:
         pos_text = f"{st.session_state.position['side'].upper()} {st.session_state.position['volume']:.3f}" if st.session_state.position else "—"
-        st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">📊 Позиция</div><div class="metric-value metric-gold">{pos_text}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div style="color:#888;">📊 Позиция</div><div class="metric-value metric-gold">{pos_text}</div></div>', unsafe_allow_html=True)
     with col_m4:
         price_text = f"{st.session_state.current_price:.1f}" if st.session_state.current_price else "—"
-        st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">💹 Цена</div><div class="metric-value metric-blue">{price_text}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div style="color:#888;">💹 Цена</div><div class="metric-value metric-blue">{price_text}</div></div>', unsafe_allow_html=True)
     with col_m5:
-        ai_status = "Активен" if st.session_state.ai_assistant.api_key else "Неактивен"
-        st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">🧠 AI</div><div class="metric-value metric-purple">{ai_status}</div></div>', unsafe_allow_html=True)
+        ai_status2 = "Активен" if st.session_state.ai_assistant.api_key else "Неактивен"
+        st.markdown(f'<div class="metric-card"><div style="color:#888;">🧠 AI</div><div class="metric-value metric-purple">{ai_status2}</div></div>', unsafe_allow_html=True)
 
 # ========== ВКЛАДКА 2: ЖУРНАЛ ==========
 with tab2:
@@ -1035,31 +780,24 @@ with tab2:
 with tab3:
     st.markdown("### 📈 Эксперт — Статистика")
     if not st.session_state.history_data.empty:
-        total_trades = len(st.session_state.history_data)
-        win_trades = len(st.session_state.history_data[st.session_state.history_data['profit'] > 0])
-        win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
-        total_profit = st.session_state.history_data['profit'].sum()
+        total = len(st.session_state.history_data)
+        wins = len(st.session_state.history_data[st.session_state.history_data['profit'] > 0])
+        wr = wins / total * 100 if total > 0 else 0
+        tp = st.session_state.history_data['profit'].sum()
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Всего сделок", total_trades)
-        col2.metric("Винрейт", f"{win_rate:.1f}%")
-        col3.metric("Общая прибыль", f"{total_profit:.2f} USDT", delta_color="normal" if total_profit >= 0 else "inverse")
-        col4.metric("Средняя прибыль", f"{total_profit/total_trades:.2f}" if total_trades > 0 else "0")
+        col1.metric("Всего сделок", total)
+        col2.metric("Винрейт", f"{wr:.1f}%")
+        col3.metric("Общая прибыль", f"{tp:.2f} USDT", delta_color="normal" if tp >= 0 else "inverse")
+        col4.metric("Средняя", f"{tp/total:.2f}" if total > 0 else "0")
     else:
         st.info("Нет данных о сделках")
 
     if not st.session_state.history_data.empty:
         st.markdown("### 📜 История сделок")
-        hist_df = st.session_state.history_data.sort_values('time', ascending=False).copy()
+        hist = st.session_state.history_data.sort_values('time', ascending=False).copy()
         def color_profit(val):
-            if val > 0:
-                return 'color: #4488ff; font-weight: bold;'
-            elif val < 0:
-                return 'color: #ff4444; font-weight: bold;'
-            else:
-                return ''
-        styled_df = hist_df.style.applymap(color_profit, subset=['profit'])
-        st.dataframe(styled_df, use_container_width=True)
-
+            return 'color: #4488ff; font-weight: bold;' if val > 0 else 'color: #ff4444; font-weight: bold;' if val < 0 else ''
+        st.dataframe(hist.style.applymap(color_profit, subset=['profit']), use_container_width=True)
         if not st.session_state.equity_data.empty:
             fig_eq = go.Figure()
             fig_eq.add_trace(go.Scatter(x=st.session_state.equity_data['time'], y=st.session_state.equity_data['equity'],
@@ -1074,7 +812,6 @@ with tab3:
             st.session_state.risk = st.slider("Риск на сделку (%)", 0.1, 5.0, 1.0, 0.1, key="risk")
             st.session_state.max_lot = st.number_input("Макс. лот", 0.001, 0.1, 0.01, 0.001, key="max_lot")
             st.session_state.sl_ticks = st.number_input("Стоп-лосс (тики)", 10, 200, 30, 5, key="sl_ticks")
-            st.session_state.tp_ticks = st.number_input("Тейк-профит (тики)", 10, 200, 30, 5, key="tp_ticks")
             st.session_state.max_avg = st.number_input("Макс. усреднений", 1, 10, 4, 1, key="max_avg")
         with col2:
             st.session_state.avg_step = st.number_input("Шаг усреднения (тики)", 20, 200, 60, 5, key="avg_step")
@@ -1093,39 +830,39 @@ with tab4:
         if st.button("🔄 Обновить AI-аналитику", use_container_width=True):
             if st.session_state.strategy:
                 st.session_state.strategy.check_ai_trend()
-                st.session_state.strategy.check_ai_sentiment()
+                st.session_state.strategy.check_ai_news()
                 st.rerun()
             else:
                 st.warning("Сначала запустите бота (▶️ СТАРТ)")
         if st.session_state.strategy and st.session_state.strategy.ai_suggestions:
-            suggestion = st.session_state.strategy.ai_suggestions
-            trend_emoji = "📈" if suggestion.get('trend') == 'up' else "📉" if suggestion.get('trend') == 'down' else "➡️"
-            trend_text = "ВОСХОДЯЩИЙ" if suggestion.get('trend') == 'up' else "НИСХОДЯЩИЙ" if suggestion.get('trend') == 'down' else "НЕЙТРАЛЬНЫЙ"
-            st.metric("Тренд", f"{trend_emoji} {trend_text}", f"Уверенность: {suggestion.get('confidence', 0)}%")
-            st.write(f"**Причина:** {suggestion.get('reason', 'Нет данных')}")
-            st.write(f"**Настроение:** {suggestion.get('sentiment', 'neutral')}")
-            st.write(f"**Рекомендация:** {suggestion.get('next_move', 'wait')}")
+            sug = st.session_state.strategy.ai_suggestions
+            emoji = "📈" if sug.get('trend') == 'up' else "📉" if sug.get('trend') == 'down' else "➡️"
+            text = "ВОСХОДЯЩИЙ" if sug.get('trend') == 'up' else "НИСХОДЯЩИЙ" if sug.get('trend') == 'down' else "НЕЙТРАЛЬНЫЙ"
+            st.metric("Тренд", f"{emoji} {text}", f"Уверенность: {sug.get('confidence', 0)}%")
+            st.write(f"**Причина:** {sug.get('reason', '—')}")
+            st.write(f"**Настроение:** {sug.get('sentiment', '—')}")
+            st.write(f"**Рекомендация:** {sug.get('next_move', '—')}")
             st.markdown("#### 💡 Рекомендации AI")
-            rec_data = {
-                "Стоп-лосс": f"{suggestion.get('suggested_sl_ticks', 30)} тиков",
-                "Шаг усреднения": f"{suggestion.get('suggested_avg_step', 60)} тиков",
-                "Риск": f"{suggestion.get('suggested_risk', 1.0)}%"
+            rec = {
+                "Стоп-лосс": f"{sug.get('suggested_sl_ticks', 30)} тиков",
+                "Шаг усреднения": f"{sug.get('suggested_avg_step', 60)} тиков",
+                "Риск": f"{sug.get('suggested_risk', 1.0)}%"
             }
-            st.dataframe(pd.DataFrame([rec_data]), use_container_width=True)
+            st.dataframe(pd.DataFrame([rec]), use_container_width=True)
         else:
-            st.info("Ожидание анализа от AI...")
+            st.info("Ожидание данных от AI...")
     with col2:
         st.markdown("#### 📰 Экономический календарь")
         if st.session_state.strategy:
             if st.session_state.strategy.trading_paused:
-                st.warning(f"⏸️ Торговля ПРИОСТАНОВЛЕНА!\n\nПричина: {st.session_state.strategy.pause_reason}")
+                st.warning(f"⏸️ Торговля ПРИОСТАНОВЛЕНА!\n\n{st.session_state.strategy.pause_reason}")
             else:
-                st.success("✅ Торговля активна. AI не обнаружил критических новостей.")
-            events = st.session_state.strategy._get_financial_calendar()
-            if events:
+                st.success("✅ Торговля активна.")
+            ev = st.session_state.strategy._get_financial_calendar()
+            if ev:
                 st.markdown("#### 📅 Ближайшие события")
-                for ev in events[:3]:
-                    st.write(f"• {ev['date']} {ev['time']} — **{ev['event']}** (важность: {ev['importance']})")
+                for e in ev[:3]:
+                    st.write(f"• {e['date']} {e['time']} — **{e['event']}** (важность: {e['importance']})")
             else:
                 st.write("Сегодня важных событий нет")
         else:
@@ -1134,43 +871,42 @@ with tab4:
         if st.session_state.ai_assistant.api_key:
             st.success("✅ DeepSeek API подключён")
             if st.session_state.strategy:
-                st.write(f"**Последнее обновление AI:** {st.session_state.strategy.ai_last_update or 'Никогда'}")
+                st.write(f"**Последнее обновление:** {st.session_state.strategy.ai_last_update or 'Никогда'}")
         else:
-            st.error("❌ DeepSeek API не настроен! Добавьте DEEPSEEK_API_KEY")
+            st.error("❌ DeepSeek API не настроен!")
             st.markdown("""
             **Как получить ключ:**
-            1. Зайди на [platform.deepseek.com](https://platform.deepseek.com)
-            2. Зарегистрируйся и создай API-ключ
-            3. Добавь в `.env` или Secrets Streamlit:
+            1. [platform.deepseek.com](https://platform.deepseek.com)
+            2. Создай API-ключ
+            3. Добавь в `.env` или Secrets:
 DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# ===== ЭТОТ БЛОК ТЕПЕРЬ ИМЕЕТ ПРАВИЛЬНЫЕ ОТСТУПЫ =====
+# ===== БЛОК СТАТИСТИКИ ОБУЧЕНИЯ (ИСПРАВЛЕННЫЙ) =====
 if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
 st.markdown("#### 📊 Статистика обучения")
-trades = st.session_state.strategy.trade_history
-df_trades = pd.DataFrame(trades)
-if not df_trades.empty:
-    fig_learn = go.Figure()
-    fig_learn.add_trace(go.Scatter(
-        x=df_trades['time'],
-        y=df_trades['profit'].cumsum(),
-        mode='lines',
-        name='Кумулятивная прибыль',
-        line=dict(color='#bb88ff', width=2)
-    ))
-    fig_learn.update_layout(
-        template='plotly_dark',
-        height=250,
-        paper_bgcolor='#0d0d1a',
-        plot_bgcolor='#0d0d1a',
-        margin=dict(l=10, r=10, t=20, b=10)
-    )
-    st.plotly_chart(fig_learn, use_container_width=True)
+trades_df = pd.DataFrame(st.session_state.strategy.trade_history)
+if not trades_df.empty:
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=trades_df['time'],
+    y=trades_df['profit'].cumsum(),
+    mode='lines',
+    name='Кумулятивная прибыль',
+    line=dict(color='#bb88ff', width=2)
+))
+fig.update_layout(
+    template='plotly_dark',
+    height=250,
+    paper_bgcolor='#0d0d1a',
+    plot_bgcolor='#0d0d1a',
+    margin=dict(l=10, r=10, t=20, b=10)
+)
+st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# ФОНОВЫЙ ЦИКЛ (если бот запущен)
+# ФОНОВЫЙ ЦИКЛ
 # ============================================================
 if st.session_state.running and st.session_state.strategy:
 if not st.session_state.thread_started:
@@ -1182,8 +918,7 @@ while st.session_state.running:
     except Exception as e:
         st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
         time.sleep(5)
-thread = threading.Thread(target=bot_loop, daemon=True)
-thread.start()
+threading.Thread(target=bot_loop, daemon=True).start()
 st.session_state.thread_started = True
 st.session_state.logs.append("🧵 Фоновый поток запущен")
 if st.session_state.running:

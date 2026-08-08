@@ -1,6 +1,6 @@
 # ============================================================
 # HOVMEL IATS — ШЕДЕВР v5.1 (С ЗАЩИТОЙ УБЫТОЧНЫХ ПОЗИЦИЙ)
-# ПОЛНЫЙ ФАЙЛ С ИНТЕРФЕЙСОМ, AI, СТРАТЕГИЕЙ
+# ПОЛНЫЙ ФАЙЛ — КОПИРУЙ ЦЕЛИКОМ
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -37,32 +37,18 @@ st.set_page_config(
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-    
-    .main-header {
-        font-family: 'Orbitron', sans-serif;
-        font-size: 2.5rem;
-        background: linear-gradient(135deg, #FFD700 0%, #FF8C00 40%, #FF4500 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        padding: 20px 0;
-    }
-    
+    .main-header { font-family: 'Orbitron', sans-serif; font-size: 2.5rem; background: linear-gradient(135deg, #FFD700 0%, #FF8C00 40%, #FF4500 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; padding: 20px 0; }
     .status-demo { display: inline-block; padding: 8px 20px; background: #00ff88; color: #000; border-radius: 20px; font-weight: bold; box-shadow: 0 0 20px rgba(0, 255, 136, 0.5); animation: pulse-green 2s infinite; }
     .status-real { display: inline-block; padding: 8px 20px; background: #ff4444; color: #fff; border-radius: 20px; font-weight: bold; box-shadow: 0 0 20px rgba(255, 68, 68, 0.5); animation: pulse-red 2s infinite; }
     .status-ai { display: inline-block; padding: 8px 20px; background: #4488ff; color: #fff; border-radius: 20px; font-weight: bold; box-shadow: 0 0 20px rgba(68, 136, 255, 0.5); animation: pulse-blue 2s infinite; }
-    
     @keyframes pulse-green { 0% { box-shadow: 0 0 20px rgba(0, 255, 136, 0.5); } 50% { box-shadow: 0 0 40px rgba(0, 255, 136, 0.9); } 100% { box-shadow: 0 0 20px rgba(0, 255, 136, 0.5); } }
     @keyframes pulse-red { 0% { box-shadow: 0 0 20px rgba(255, 68, 68, 0.5); } 50% { box-shadow: 0 0 40px rgba(255, 68, 68, 0.9); } 100% { box-shadow: 0 0 20px rgba(255, 68, 68, 0.5); } }
     @keyframes pulse-blue { 0% { box-shadow: 0 0 20px rgba(68, 136, 255, 0.5); } 50% { box-shadow: 0 0 40px rgba(68, 136, 255, 0.9); } 100% { box-shadow: 0 0 20px rgba(68, 136, 255, 0.5); } }
-    
     .status-stopped { display: inline-block; padding: 8px 20px; background: #666; color: #fff; border-radius: 20px; font-weight: bold; }
     .status-running { display: inline-block; padding: 8px 20px; background: #ffaa00; color: #000; border-radius: 20px; font-weight: bold; animation: pulse-yellow 1.5s infinite; }
     .status-paused { display: inline-block; padding: 8px 20px; background: #ff6600; color: #fff; border-radius: 20px; font-weight: bold; animation: pulse-orange 1s infinite; }
-    
     @keyframes pulse-yellow { 0% { box-shadow: 0 0 20px rgba(255, 170, 0, 0.5); } 50% { box-shadow: 0 0 40px rgba(255, 170, 0, 0.9); } 100% { box-shadow: 0 0 20px rgba(255, 170, 0, 0.5); } }
     @keyframes pulse-orange { 0% { box-shadow: 0 0 20px rgba(255, 102, 0, 0.5); } 50% { box-shadow: 0 0 40px rgba(255, 102, 0, 0.9); } 100% { box-shadow: 0 0 20px rgba(255, 102, 0, 0.5); } }
-    
     .metric-card { background: #1a1a2e; padding: 20px; border-radius: 12px; border: 1px solid #333; margin: 5px; }
     .metric-value { font-size: 28px; font-weight: bold; }
     .metric-green { color: #00ff88; }
@@ -70,7 +56,6 @@ st.markdown("""
     .metric-gold { color: #ffd700; }
     .metric-blue { color: #4488ff; }
     .metric-purple { color: #bb88ff; }
-    
     .log-container { background: #0a0a12; padding: 15px; border-radius: 8px; max-height: 300px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 12px; color: #aaa; border: 1px solid #222; }
     .log-entry-green { color: #00ff88; }
     .log-entry-red { color: #ff4444; }
@@ -79,18 +64,12 @@ st.markdown("""
     .log-entry-purple { color: #bb88ff; }
     .log-entry-white { color: #ffffff; }
     .log-entry-orange { color: #ff8800; }
-    
     .stTabs [data-baseweb="tab-list"] { gap: 2px; background-color: #1a1a2e; border-radius: 8px 8px 0 0; padding: 5px 10px; }
     .stTabs [data-baseweb="tab"] { border-radius: 6px 6px 0 0; padding: 8px 20px; background-color: #2a2a4e; color: #888; font-weight: bold; }
     .stTabs [data-baseweb="tab"][aria-selected="true"] { background-color: #3a3a6e; color: #fff; border-bottom: 3px solid #ffd700; }
-    
     .trade-profit { color: #4488ff; font-weight: bold; }
     .trade-loss { color: #ff4444; font-weight: bold; }
-    
     .stButton button { width: 100%; border-radius: 8px; font-weight: bold; padding: 10px; }
-    .btn-start { background: #00cc66; color: #000; }
-    .btn-stop { background: #ff4444; color: #fff; }
-    .btn-ai { background: #4444ff; color: #fff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -108,17 +87,14 @@ class DeepSeekAIAssistant:
     def analyze(self, analysis_type, data):
         if not self.api_key:
             return {"error": "Не задан API-ключ DeepSeek"}
-
         prompt = self._build_prompt(analysis_type, data)
         response = self._call_deepseek(prompt)
-        
         self.conversation_history.append({
             'time': datetime.now().isoformat(),
             'type': analysis_type,
             'data': data,
             'response': response
         })
-        
         return response
 
     def _build_prompt(self, analysis_type, data):
@@ -126,100 +102,72 @@ class DeepSeekAIAssistant:
             'trend': f"""
             Проанализируй рыночные данные и определи тренд:
             {json.dumps(data, indent=2)}
-            
-            Также учти:
-            - Если RSI > 70, рынок перекуплен
-            - Если RSI < 30, рынок перепродан
-            - Если цена выше SMA20 и SMA50, тренд восходящий
-            - Если цена ниже SMA20 и SMA50, тренд нисходящий
-            
             Ответь строго в JSON формате:
             {{
                 "trend": "up" или "down" или "neutral",
                 "confidence": число от 0 до 100,
                 "reason": "краткое объяснение (на русском)",
-                "suggested_sl_ticks": рекомендуемый стоп-лосс (число),
-                "suggested_avg_step": рекомендуемый шаг усреднения (число),
-                "suggested_risk": рекомендуемый риск на сделку (число 0.5-3.0),
+                "suggested_sl_ticks": число,
+                "suggested_avg_step": число,
+                "suggested_risk": число,
                 "sentiment": "bullish" или "bearish" или "neutral",
                 "next_move": "buy" или "sell" или "wait"
             }}
             """,
-            
             'news': f"""
             Проанализируй экономический календарь на {datetime.now().strftime('%Y-%m-%d')}:
             {json.dumps(data, indent=2)}
-            
-            Определи:
-            1. Есть ли важные новости (FOMC, NFP, CPI, PPI, решения по ставкам, выступления глав ЦБ)
-            2. Время до ближайшей важной новости
-            3. Рекомендация по торговле
-            
             Ответь в JSON:
             {{
                 "has_important_news": true/false,
                 "news_items": ["список важных событий"],
                 "time_to_news_minutes": число,
                 "should_pause_trading": true/false,
-                "pause_before_minutes": число (рекомендуемое время паузы до новости),
-                "pause_after_minutes": число (рекомендуемое время паузы после новости),
+                "pause_before_minutes": число,
+                "pause_after_minutes": число,
                 "impact": "high" или "medium" или "low"
             }}
             """,
-            
             'sentiment': f"""
-            Проанализируй текущее состояние рынка для криптовалюты:
+            Проанализируй текущее состояние рынка:
             {json.dumps(data, indent=2)}
-            
-            Определи рыночные настроения на основе:
-            - Изменение цены за последний час и день
-            - Объём торгов
-            - Волатильность
-            - Позиция относительно уровней поддержки/сопротивления
-            
             Ответь в JSON:
             {{
                 "overall_sentiment": "bullish" или "bearish" или "neutral",
-                "confidence": число от 0 до 100,
-                "fear_greed_index": число от 0 до 100 (0-страх, 100-жадность),
-                "support_level": число (ближайший уровень поддержки),
-                "resistance_level": число (ближайший уровень сопротивления),
+                "confidence": число,
+                "fear_greed_index": число,
+                "support_level": число,
+                "resistance_level": число,
                 "recommendation": "buy" или "sell" или "wait"
             }}
             """,
-            
             'learn': f"""
-            Проанализируй историю сделок и определи паттерны:
+            Проанализируй историю сделок:
             {json.dumps(data, indent=2)}
-            
-            На основе анализа предложи улучшения стратегии.
             Ответь в JSON:
             {{
-                "best_time_to_trade": "часы с наибольшей прибыльностью",
-                "worst_time_to_trade": "часы с наихудшей прибыльностью",
-                "optimal_avg_count": рекомендуемое число усреднений,
-                "optimal_avg_step": рекомендуемый шаг усреднения,
-                "winrate_improvement_suggestions": ["список предложений"],
+                "best_time_to_trade": "часы",
+                "worst_time_to_trade": "часы",
+                "optimal_avg_count": число,
+                "optimal_avg_step": число,
+                "winrate_improvement_suggestions": ["предложения"],
                 "risk_adjustment": "increase" или "decrease" или "keep"
             }}
             """,
-            
             'market_state': f"""
-            Текущее состояние рынка для адаптации стратегии:
+            Текущее состояние рынка:
             {json.dumps(data, indent=2)}
-            
-            Предложи оптимальные параметры стратегии IATS:
             Ответь в JSON:
             {{
-                "risk_percent": число (0.5-3.0),
+                "risk_percent": число,
                 "max_lot": число,
-                "sl_ticks": число (20-100),
-                "avg_step": число (30-150),
-                "avg_coefficient": число (1.2-2.5),
-                "trailing_distance": число (20-80),
-                "max_averaging": число (2-6),
-                "max_reverses": число (0-4),
-                "confidence": число от 0 до 100
+                "sl_ticks": число,
+                "avg_step": число,
+                "avg_coefficient": число,
+                "trailing_distance": число,
+                "max_averaging": число,
+                "max_reverses": число,
+                "confidence": число
             }}
             """
         }
@@ -234,7 +182,7 @@ class DeepSeekAIAssistant:
             payload = {
                 "model": "deepseek-chat",
                 "messages": [
-                    {"role": "system", "content": "Ты эксперт по криптовалютной торговле с 20-летним опытом. Отвечай только структурированным JSON. Будь консервативен в рекомендациях."},
+                    {"role": "system", "content": "Ты эксперт по криптовалютной торговле. Отвечай только структурированным JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.3,
@@ -247,7 +195,7 @@ class DeepSeekAIAssistant:
                 content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
                 return json.loads(content)
             else:
-                return {"error": f"API ошибка: {response.status_code}", "detail": response.text}
+                return {"error": f"API ошибка: {response.status_code}"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -269,19 +217,13 @@ class IATSStrategyAI:
         self.trailing_level = 0.0
         self.last_entry_time = 0
         
-        # AI-состояние
         self.ai_last_update = None
         self.ai_suggestions = {}
         self.trading_paused = False
         self.pause_reason = ""
         self.pause_until = None
-        
-        # Обучение
         self.trade_history = []
         self.learning_stats = {}
-        self.adaptive_params = {}
-        
-        # Временные фильтры
         self.best_hours = []
         self.worst_hours = []
 
@@ -355,28 +297,6 @@ class IATSStrategyAI:
                 return False
         return True
 
-    def check_ai_news(self):
-        if not self.ai.api_key:
-            return
-        today = datetime.now()
-        news_data = {
-            "today": today.strftime('%Y-%m-%d'),
-            "events": self._get_financial_calendar()
-        }
-        result = self.ai.analyze('news', news_data)
-        if result and not result.get('error'):
-            if result.get('should_pause_trading', False) and result.get('impact') in ['high', 'medium']:
-                pause_before = result.get('pause_before_minutes', 60)
-                pause_after = result.get('pause_after_minutes', 30)
-                self.trading_paused = True
-                self.pause_reason = f"Важные новости: {', '.join(result.get('news_items', []))}"
-                self.pause_until = datetime.now() + timedelta(minutes=pause_before + pause_after + 10)
-                st.session_state.logs.append(f"⏸️ Торговля приостановлена (новости): {self.pause_reason}")
-            else:
-                self.trading_paused = False
-                self.pause_reason = ""
-                self.pause_until = None
-
     def _get_financial_calendar(self):
         events = [
             {"date": "2024-11-06", "time": "14:00", "event": "FOMC Interest Rate Decision", "importance": "high"},
@@ -389,6 +309,24 @@ class IATSStrategyAI:
         ]
         today = datetime.now().strftime('%Y-%m-%d')
         return [e for e in events if e['date'] >= today]
+
+    def check_ai_news(self):
+        if not self.ai.api_key:
+            return
+        news_data = {"today": datetime.now().strftime('%Y-%m-%d'), "events": self._get_financial_calendar()}
+        result = self.ai.analyze('news', news_data)
+        if result and not result.get('error'):
+            if result.get('should_pause_trading', False) and result.get('impact') in ['high', 'medium']:
+                pause_before = result.get('pause_before_minutes', 60)
+                pause_after = result.get('pause_after_minutes', 30)
+                self.trading_paused = True
+                self.pause_reason = f"Важные новости: {', '.join(result.get('news_items', []))}"
+                self.pause_until = datetime.now() + timedelta(minutes=pause_before + pause_after + 10)
+                st.session_state.logs.append(f"⏸️ Пауза: {self.pause_reason}")
+            else:
+                self.trading_paused = False
+                self.pause_reason = ""
+                self.pause_until = None
 
     def check_ai_trend(self):
         if not self.ai.api_key:
@@ -411,10 +349,7 @@ class IATSStrategyAI:
         result = self.ai.analyze('trend', market_data)
         if result and not result.get('error'):
             self.ai_suggestions = result
-            trend = result.get('trend', 'neutral')
-            confidence = result.get('confidence', 0)
-            sentiment = result.get('sentiment', 'neutral')
-            st.session_state.logs.append(f"🧠 AI: тренд {trend}, уверенность {confidence}%, настроение {sentiment}")
+            st.session_state.logs.append(f"🧠 AI: тренд {result.get('trend')}, уверенность {result.get('confidence')}%")
             if result.get('suggested_sl_ticks'):
                 self.config['sl_ticks'] = int(result['suggested_sl_ticks'])
             if result.get('suggested_avg_step'):
@@ -560,18 +495,14 @@ class IATSStrategyAI:
         now = datetime.now()
         if now.second % 2 != 0:
             return False
-
-        # Если пауза — новые входы запрещены (даже если позиция убыточна)
         if self.trading_paused:
             if self.pause_until and datetime.now() < self.pause_until:
                 return False
             else:
                 self.trading_paused = False
                 self.pause_reason = ""
-
         if not self.check_time_filter():
             return False
-
         if self.ai_suggestions:
             next_move = self.ai_suggestions.get('next_move', 'wait')
             if next_move == 'wait':
@@ -580,13 +511,11 @@ class IATSStrategyAI:
                 return False
             if next_move == 'buy' and self.ai_suggestions.get('trend') == 'down':
                 return False
-
         return True
 
     def _close_trade(self, profit):
         if not self.position:
             return
-
         trade_data = {
             'time': datetime.now(),
             'symbol': self.symbol,
@@ -598,7 +527,6 @@ class IATSStrategyAI:
             'is_reversed': self.is_reversed
         }
         self.trade_history.append(trade_data)
-        
         new_row = pd.DataFrame({
             'time': [datetime.now()],
             'symbol': [self.symbol],
@@ -610,7 +538,6 @@ class IATSStrategyAI:
             st.session_state.history_data = new_row
         else:
             st.session_state.history_data = pd.concat([st.session_state.history_data, new_row], ignore_index=True)
-
         current_equity = st.session_state.balance + st.session_state.history_data['profit'].sum()
         eq_row = pd.DataFrame({
             'time': [datetime.now()],
@@ -622,7 +549,6 @@ class IATSStrategyAI:
             st.session_state.equity_data = pd.concat([st.session_state.equity_data, eq_row], ignore_index=True)
 
     def tick(self):
-        # Обновляем AI-аналитику каждые 5 минут
         now = datetime.now()
         if self.ai_last_update is None or (now - self.ai_last_update).seconds > 300:
             self.ai_last_update = now
@@ -633,13 +559,15 @@ class IATSStrategyAI:
             if len(self.trade_history) > 10 and (now.minute == 0):
                 self.check_ai_learning()
 
-        # Если торги приостановлены — пропускаем только новые входы, но позицию продолжаем держать
-        # (в check_entry_signal мы уже запретили вход)
+        if self.trading_paused and self.pause_until and now < self.pause_until:
+            # Если пауза активна, мы НЕ входим в новые сделки, но позицию держим
+            # (в check_entry_signal это уже учтено)
+            pass
 
         current_price = self.get_current_price()
         st.session_state.current_price = current_price
 
-        # Если позиции нет — пытаемся войти
+        # --- Вход ---
         if self.position is None:
             if self.check_entry_signal():
                 sl_price = current_price - self.config.get('sl_ticks', 30) * self.tick_size
@@ -670,7 +598,7 @@ class IATSStrategyAI:
                         st.session_state.logs.append(f"🧪 [DRY] Позиция открыта")
             return
 
-        # Управление позицией
+        # --- Управление позицией ---
         side = self.position['side']
         avg_price = self.position['avg_price']
         volume = self.position['volume']
@@ -681,15 +609,14 @@ class IATSStrategyAI:
             profit_usdt = (avg_price - current_price) * volume
         st.session_state.pnl = profit_usdt
 
-        # ========== НОВАЯ ЛОГИКА: ЗАЩИТА УБЫТОЧНЫХ ПОЗИЦИЙ ПРИ ПАУЗЕ ==========
-        # Если пауза включена и позиция убыточна — НЕ применяем стоп-лосс и трейлинг
+        # ========== ЗАЩИТА УБЫТОЧНЫХ ПОЗИЦИЙ ПРИ ПАУЗЕ ==========
         is_profit = profit_usdt >= 0
         apply_stop_and_trailing = not (self.trading_paused and not is_profit)
 
         if not apply_stop_and_trailing:
             st.session_state.logs.append(f"🛡️ Пауза: позиция убыточная ({profit_usdt:.2f}), стоп и трейлинг отключены")
 
-        # ========== СТОП-ЛОСС (только если apply_stop_and_trailing = True) ==========
+        # --- Стоп-лосс ---
         if apply_stop_and_trailing:
             if side == 'buy':
                 sl_price = avg_price - self.config.get('sl_ticks', 30) * self.tick_size
@@ -708,7 +635,7 @@ class IATSStrategyAI:
                     self.position = None
                     return
 
-        # ========== ТРЕЙЛИНГ (только если apply_stop_and_trailing = True) ==========
+        # --- Трейлинг ---
         if apply_stop_and_trailing and self.config.get('enable_trailing', True):
             if not self.trailing_active:
                 profit_ticks = (current_price - avg_price) / self.tick_size if side == 'buy' else (avg_price - current_price) / self.tick_size
@@ -741,7 +668,7 @@ class IATSStrategyAI:
                         self.position = None
                         return
 
-        # ========== УСРЕДНЕНИЕ (всегда разрешено, даже при паузе) ==========
+        # --- Усреднение (всегда разрешено) ---
         if self.averaging_count < self.config.get('max_averaging', 4):
             step = self.config.get('averaging_step_ticks', 60) * (self.averaging_count + 1) * self.tick_size
             if side == 'buy':
@@ -764,7 +691,7 @@ class IATSStrategyAI:
                             self.position['avg_price'] = new_avg
                             self.position['volume'] = total_volume
                             self.averaging_count += 1
-                            st.session_state.logs.append(f"🧪 [DRY] Усреднение # {self.averaging_count}")
+                            st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
             else:
                 if current_price >= avg_price + step:
                     new_lot = self.calculate_lot('sell', current_price, current_price + self.config.get('sl_ticks', 30) * self.tick_size)
@@ -785,9 +712,9 @@ class IATSStrategyAI:
                             self.position['avg_price'] = new_avg
                             self.position['volume'] = total_volume
                             self.averaging_count += 1
-                            st.session_state.logs.append(f"🧪 [DRY] Усреднение # {self.averaging_count}")
+                            st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
 
-        # ========== ПЕРЕВОРОТ (только если не пауза или позиция прибыльная) ==========
+        # --- Переворот (только если не пауза или позиция прибыльна) ---
         if not self.trading_paused or is_profit:
             if self.averaging_count >= self.config.get('max_averaging', 4) and not self.is_reversed and self.reverse_count < self.config.get('max_reverses', 3):
                 if side == 'buy' and current_price <= avg_price - 15 * self.tick_size:
@@ -892,6 +819,8 @@ if 'ai_assistant' not in st.session_state:
     st.session_state.ai_assistant = DeepSeekAIAssistant()
 if 'ai_status' not in st.session_state:
     st.session_state.ai_status = 'idle'
+if 'thread_started' not in st.session_state:
+    st.session_state.thread_started = False
 
 # === ДОСТУПНЫЕ СИМВОЛЫ ===
 SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
@@ -908,7 +837,6 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=100):
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except:
-        # Демо-данные при недоступности биржи
         dates = pd.date_range(end=datetime.now(), periods=100, freq='1min')
         base_price = 60000 if 'BTC' in symbol else (3000 if 'ETH' in symbol else (150 if 'SOL' in symbol else 0.5))
         np.random.seed(42 + hash(symbol) % 100)
@@ -1012,7 +940,7 @@ with tab1:
                     secret = os.getenv('OKX_API_SECRET') or st.secrets.get('OKX_API_SECRET')
                     passphrase = os.getenv('OKX_API_PASSPHRASE') or st.secrets.get('OKX_API_PASSPHRASE')
                     if not api_key or not secret or not passphrase:
-                        st.error("❌ Не заданы API-ключи OKX! Добавьте их в .env или в Secrets Streamlit.")
+                        st.error("❌ Не заданы API-ключи OKX!")
                     else:
                         exchange = ccxt.okx({
                             'apiKey': api_key,
@@ -1041,7 +969,7 @@ with tab1:
                         st.session_state.logs.append(f"🚀 Бот запущен на {st.session_state.selected_symbol}")
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Ошибка инициализации: {e}")
+                    st.error(f"Ошибка: {e}")
     with col2:
         if st.button("⏹ СТОП", use_container_width=True):
             st.session_state.running = False
@@ -1074,7 +1002,7 @@ with tab1:
             if st.session_state.ai_assistant.api_key:
                 st.session_state.logs.append("🧠 AI активирован")
             else:
-                st.error("❌ Добавьте DEEPSEEK_API_KEY в .env или Secrets")
+                st.error("❌ Добавьте DEEPSEEK_API_KEY")
 
     # Метрики
     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
@@ -1105,9 +1033,9 @@ with tab2:
             log_html += f'<div class="log-entry-green">{log}</div>'
         elif "🔴" in log or "❌" in log:
             log_html += f'<div class="log-entry-red">{log}</div>'
-        elif "🧠" in log or "AI" in log or "🔄" in log or "⏸️" in log or "🟡" in log:
+        elif "🧠" in log or "AI" in log or "🔄" in log or "⏸️" in log or "🟡" in log or "🛡️" in log:
             log_html += f'<div class="log-entry-gold">{log}</div>'
-        elif "⏰" in log or "🛡️" in log:
+        elif "⏰" in log:
             log_html += f'<div class="log-entry-orange">{log}</div>'
         elif "📊" in log or "💰" in log or "📈" in log:
             log_html += f'<div class="log-entry-blue">{log}</div>'
@@ -1174,9 +1102,7 @@ with tab3:
 # ========== ВКЛАДКА 4: AI-АНАЛИТИКА ==========
 with tab4:
     st.markdown("### 🤖 AI-Аналитика (DeepSeek)")
-    
     col1, col2 = st.columns(2)
-    
     with col1:
         st.markdown("#### 📊 Текущий анализ")
         if st.button("🔄 Обновить AI-аналитику", use_container_width=True):
@@ -1186,19 +1112,14 @@ with tab4:
                 st.rerun()
             else:
                 st.warning("Сначала запустите бота (▶️ СТАРТ)")
-        
         if st.session_state.strategy and st.session_state.strategy.ai_suggestions:
             suggestion = st.session_state.strategy.ai_suggestions
-            
             trend_emoji = "📈" if suggestion.get('trend') == 'up' else "📉" if suggestion.get('trend') == 'down' else "➡️"
             trend_text = "ВОСХОДЯЩИЙ" if suggestion.get('trend') == 'up' else "НИСХОДЯЩИЙ" if suggestion.get('trend') == 'down' else "НЕЙТРАЛЬНЫЙ"
-            
             st.metric("Тренд", f"{trend_emoji} {trend_text}", f"Уверенность: {suggestion.get('confidence', 0)}%")
-            
             st.write(f"**Причина:** {suggestion.get('reason', 'Нет данных')}")
             st.write(f"**Настроение:** {suggestion.get('sentiment', 'neutral')}")
             st.write(f"**Рекомендация:** {suggestion.get('next_move', 'wait')}")
-            
             st.markdown("#### 💡 Рекомендации AI")
             rec_data = {
                 "Стоп-лосс": f"{suggestion.get('suggested_sl_ticks', 30)} тиков",
@@ -1208,16 +1129,13 @@ with tab4:
             st.dataframe(pd.DataFrame([rec_data]), use_container_width=True)
         else:
             st.info("Ожидание анализа от AI...")
-    
     with col2:
         st.markdown("#### 📰 Экономический календарь")
-        
         if st.session_state.strategy:
             if st.session_state.strategy.trading_paused:
                 st.warning(f"⏸️ Торговля ПРИОСТАНОВЛЕНА!\n\nПричина: {st.session_state.strategy.pause_reason}")
             else:
                 st.success("✅ Торговля активна. AI не обнаружил критических новостей.")
-            
             events = st.session_state.strategy._get_financial_calendar()
             if events:
                 st.markdown("#### 📅 Ближайшие события")
@@ -1227,7 +1145,6 @@ with tab4:
                 st.write("Сегодня важных событий нет")
         else:
             st.info("Запустите бота для получения данных")
-        
         st.markdown("#### 🔌 Статус AI")
         if st.session_state.ai_assistant.api_key:
             st.success("✅ DeepSeek API подключён")
@@ -1244,7 +1161,7 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-
+# График обучения
 if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
 st.markdown("#### 📊 Статистика обучения")
 trades = st.session_state.strategy.trade_history
@@ -1271,8 +1188,6 @@ if not df_trades.empty:
 # ФОНОВЫЙ ЦИКЛ (если бот запущен)
 # ============================================================
 if st.session_state.running and st.session_state.strategy:
-if 'thread_started' not in st.session_state:
-st.session_state.thread_started = False
 if not st.session_state.thread_started:
 def bot_loop():
 while st.session_state.running:
@@ -1286,7 +1201,6 @@ thread = threading.Thread(target=bot_loop, daemon=True)
 thread.start()
 st.session_state.thread_started = True
 st.session_state.logs.append("🧵 Фоновый поток запущен")
-
 if st.session_state.running:
 time.sleep(0.5)
 st.rerun()
@@ -1297,9 +1211,8 @@ st.rerun()
 st.markdown("---")
 st.markdown(
 '<div style="text-align:center;color:#666;font-size:12px;padding:20px;">'
-'HOVMEL IATS — ШЕДЕВР v5.1 | AI-ассистент DeepSeek | Самообучение | '
-'Защита убыточных позиций при новостях | MT5-интерфейс | '
-'Поддержка нескольких инструментов | © 2024 HOVMEL Trading Systems'
+'HOVMEL IATS — ШЕДЕВР v5.1 | AI-ассистент DeepSeek | Защита убыточных позиций | '
+'MT5-интерфейс | Поддержка нескольких инструментов | © 2024 HOVMEL Trading Systems'
 '</div>',
 unsafe_allow_html=True
 )

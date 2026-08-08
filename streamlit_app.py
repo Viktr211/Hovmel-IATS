@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v5.1 (ПОЛНАЯ ВЕРСИЯ)
+# HOVMEL IATS — ШЕДЕВР v5.1 (ПОЛНАЯ ВЕРСИЯ, ИСПРАВЛЕННАЯ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -1070,18 +1070,18 @@ with tab3:
     with st.expander("⚙️ Настройки стратегии"):
         col1, col2 = st.columns(2)
         with col1:
-            st.session_state.risk = st.slider("Риск на сделку (%)", 0.1, 5.0, 1.0, 0.1, key="risk")
-            st.session_state.max_lot = st.number_input("Макс. лот", 0.001, 0.1, 0.01, 0.001, key="max_lot")
-            st.session_state.sl_ticks = st.number_input("Стоп-лосс (тики)", 10, 200, 30, 5, key="sl_ticks")
-            st.session_state.tp_ticks = st.number_input("Тейк-профит (тики)", 10, 200, 30, 5, key="tp_ticks")
-            st.session_state.max_avg = st.number_input("Макс. усреднений", 1, 10, 4, 1, key="max_avg")
+            st.slider("Риск на сделку (%)", 0.1, 5.0, 1.0, 0.1, key="risk")
+            st.number_input("Макс. лот", 0.001, 0.1, 0.01, 0.001, key="max_lot")
+            st.number_input("Стоп-лосс (тики)", 10, 200, 30, 5, key="sl_ticks")
+            st.number_input("Тейк-профит (тики)", 10, 200, 30, 5, key="tp_ticks")
+            st.number_input("Макс. усреднений", 1, 10, 4, 1, key="max_avg")
         with col2:
-            st.session_state.avg_step = st.number_input("Шаг усреднения (тики)", 20, 200, 60, 5, key="avg_step")
-            st.session_state.avg_coef = st.slider("Коэф. усреднения", 1.0, 3.0, 1.5, 0.1, key="avg_coef")
-            st.session_state.max_rev = st.number_input("Макс. переворотов", 0, 5, 3, 1, key="max_rev")
-            st.session_state.trailing = st.checkbox("Включить трейлинг", True, key="trailing")
-            st.session_state.trail_dist = st.number_input("Дистанция трейлинга (тики)", 10, 100, 40, 5, key="trail_dist")
-            st.session_state.scan_interval = st.number_input("Интервал сканирования (сек)", 5, 60, 10, 5, key="scan_interval")
+            st.number_input("Шаг усреднения (тики)", 20, 200, 60, 5, key="avg_step")
+            st.slider("Коэф. усреднения", 1.0, 3.0, 1.5, 0.1, key="avg_coef")
+            st.number_input("Макс. переворотов", 0, 5, 3, 1, key="max_rev")
+            st.checkbox("Включить трейлинг", True, key="trailing")
+            st.number_input("Дистанция трейлинга (тики)", 10, 100, 40, 5, key="trail_dist")
+            st.number_input("Интервал сканирования (сек)", 5, 60, 10, 5, key="scan_interval")
 
 # ========== ВКЛАДКА 4: AI-АНАЛИТИКА ==========
 with tab4:
@@ -1145,50 +1145,50 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# ===== ИСПРАВЛЕННЫЙ БЛОК СТАТИСТИКИ ОБУЧЕНИЯ =====
- # ===== БЛОК СТАТИСТИКИ ОБУЧЕНИЯ =====
-        if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
-            st.markdown("#### 📊 Статистика обучения")
-            trades = st.session_state.strategy.trade_history
-            df_trades = pd.DataFrame(trades)
-            if not df_trades.empty:
-                fig_learn = go.Figure()
-                fig_learn.add_trace(go.Scatter(
-                    x=df_trades['time'],
-                    y=df_trades['profit'].cumsum(),
-                    mode='lines',
-                    name='Кумулятивная прибыль',
-                    line=dict(color='#bb88ff', width=2)
-                ))
-                fig_learn.update_layout(
-                    template='plotly_dark',
-                    height=250,
-                    paper_bgcolor='#0d0d1a',
-                    plot_bgcolor='#0d0d1a',
-                    margin=dict(l=10, r=10, t=20, b=10)
-                )
-                st.plotly_chart(fig_learn, use_container_width=True)
+# ===== БЛОК СТАТИСТИКИ ОБУЧЕНИЯ (С ПРАВИЛЬНЫМИ ОТСТУПАМИ) =====
+if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
+st.markdown("#### 📊 Статистика обучения")
+trades = st.session_state.strategy.trade_history
+df_trades = pd.DataFrame(trades)
+if not df_trades.empty:
+    fig_learn = go.Figure()
+    fig_learn.add_trace(go.Scatter(
+        x=df_trades['time'],
+        y=df_trades['profit'].cumsum(),
+        mode='lines',
+        name='Кумулятивная прибыль',
+        line=dict(color='#bb88ff', width=2)
+    ))
+    fig_learn.update_layout(
+        template='plotly_dark',
+        height=250,
+        paper_bgcolor='#0d0d1a',
+        plot_bgcolor='#0d0d1a',
+        margin=dict(l=10, r=10, t=20, b=10)
+    )
+    st.plotly_chart(fig_learn, use_container_width=True)
 
 # ============================================================
 # ФОНОВЫЙ ЦИКЛ (если бот запущен)
 # ============================================================
 if st.session_state.running and st.session_state.strategy:
-    if not st.session_state.thread_started:
-        def bot_loop():
-            while st.session_state.running:
-                try:
-                    st.session_state.strategy.tick()
-                    time.sleep(st.session_state.get('scan_interval', 10))
-                except Exception as e:
-                    st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
-                    time.sleep(5)
-        thread = threading.Thread(target=bot_loop, daemon=True)
-        thread.start()
-        st.session_state.thread_started = True
-        st.session_state.logs.append("🧵 Фоновый поток запущен")
-    if st.session_state.running:
-        time.sleep(0.5)
-        st.rerun()
+if not st.session_state.thread_started:
+def bot_loop():
+while st.session_state.running:
+    try:
+        st.session_state.strategy.tick()
+        time.sleep(st.session_state.get('scan_interval', 10))
+    except Exception as e:
+        st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
+        time.sleep(5)
+thread = threading.Thread(target=bot_loop, daemon=True)
+thread.start()
+st.session_state.thread_started = True
+st.session_state.logs.append("🧵 Фоновый поток запущен")
+if st.session_state.running:
+time.sleep(0.5)
+st.rerun()
+
 # ============================================================
 # ФУТЕР
 # ============================================================

@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v5.1 (ПОЛНАЯ ВЕРСИЯ, ИСПРАВЛЕННАЯ)
+# HOVMEL IATS — ШЕДЕВР v5.1 (ФИНАЛ, С ФУНКЦИЕЙ ОБУЧЕНИЯ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -17,12 +17,9 @@ import os
 import math
 import requests
 from dotenv import load_dotenv
-import hashlib
-from collections import deque
 
 load_dotenv()
 
-# === КОНФИГУРАЦИЯ ===
 st.set_page_config(
     page_title="HOVMEL IATS v5.1 - AI Trader",
     page_icon="🧠",
@@ -73,7 +70,34 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# AI-АССИСТЕНТ (DeepSeek) - ПОЛНАЯ ВЕРСИЯ
+# ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СТАТИСТИКИ ОБУЧЕНИЯ
+# ============================================================
+def display_learning_stats():
+    """Отображает график кумулятивной прибыли на основе истории сделок"""
+    if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
+        st.markdown("#### 📊 Статистика обучения")
+        trades = st.session_state.strategy.trade_history
+        df_trades = pd.DataFrame(trades)
+        if not df_trades.empty:
+            fig_learn = go.Figure()
+            fig_learn.add_trace(go.Scatter(
+                x=df_trades['time'],
+                y=df_trades['profit'].cumsum(),
+                mode='lines',
+                name='Кумулятивная прибыль',
+                line=dict(color='#bb88ff', width=2)
+            ))
+            fig_learn.update_layout(
+                template='plotly_dark',
+                height=250,
+                paper_bgcolor='#0d0d1a',
+                plot_bgcolor='#0d0d1a',
+                margin=dict(l=10, r=10, t=20, b=10)
+            )
+            st.plotly_chart(fig_learn, use_container_width=True)
+
+# ============================================================
+# AI-АССИСТЕНТ (DeepSeek)
 # ============================================================
 class DeepSeekAIAssistant:
     def __init__(self):
@@ -199,7 +223,7 @@ class DeepSeekAIAssistant:
             return {"error": str(e)}
 
 # ============================================================
-# СТРАТЕГИЯ IATS С AI-АДАПТАЦИЕЙ (v5.1 — с защитой убыточных позиций)
+# СТРАТЕГИЯ IATS (полная версия)
 # ============================================================
 class IATSStrategyAI:
     def __init__(self, exchange, symbol, config, ai_assistant):
@@ -215,7 +239,6 @@ class IATSStrategyAI:
         self.trailing_active = False
         self.trailing_level = 0.0
         self.last_entry_time = 0
-        
         self.ai_last_update = None
         self.ai_suggestions = {}
         self.trading_paused = False
@@ -801,21 +824,17 @@ if 'strategy' not in st.session_state:
     st.session_state.strategy = None
 if 'exchange' not in st.session_state:
     st.session_state.exchange = None
-if 'bot_thread' not in st.session_state:
-    st.session_state.bot_thread = None
 if 'running' not in st.session_state:
     st.session_state.running = False
 if 'ai_assistant' not in st.session_state:
     st.session_state.ai_assistant = DeepSeekAIAssistant()
-if 'ai_status' not in st.session_state:
-    st.session_state.ai_status = 'idle'
 if 'thread_started' not in st.session_state:
     st.session_state.thread_started = False
 
 SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
 
 # ============================================================
-# ФУНКЦИИ ЗАГРУЗКИ ДАННЫХ
+# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ
 # ============================================================
 @st.cache_data(ttl=60)
 def fetch_ohlcv(symbol, timeframe='1m', limit=100):
@@ -1145,31 +1164,11 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# ===== БЛОК СТАТИСТИКИ ОБУЧЕНИЯ (С ПРАВИЛЬНЫМИ ОТСТУПАМИ) =====
-if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
-st.markdown("#### 📊 Статистика обучения")
-trades = st.session_state.strategy.trade_history
-df_trades = pd.DataFrame(trades)
-if not df_trades.empty:
-    fig_learn = go.Figure()
-    fig_learn.add_trace(go.Scatter(
-        x=df_trades['time'],
-        y=df_trades['profit'].cumsum(),
-        mode='lines',
-        name='Кумулятивная прибыль',
-        line=dict(color='#bb88ff', width=2)
-    ))
-    fig_learn.update_layout(
-        template='plotly_dark',
-        height=250,
-        paper_bgcolor='#0d0d1a',
-        plot_bgcolor='#0d0d1a',
-        margin=dict(l=10, r=10, t=20, b=10)
-    )
-    st.plotly_chart(fig_learn, use_container_width=True)
+# ===== ВЫЗОВ ФУНКЦИИ СТАТИСТИКИ ОБУЧЕНИЯ =====
+display_learning_stats()
 
 # ============================================================
-# ФОНОВЫЙ ЦИКЛ (если бот запущен)
+# ФОНОВЫЙ ЦИКЛ
 # ============================================================
 if st.session_state.running and st.session_state.strategy:
 if not st.session_state.thread_started:

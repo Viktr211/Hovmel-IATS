@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v5.1 (ФИНАЛ С ФУНКЦИЯМИ)
+# HOVMEL IATS — ШЕДЕВР v6.0 (МУЛЬТИ-СТРАТЕГИЯ, БЕЗ КЛЮЧЕЙ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -21,14 +21,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(
-    page_title="HOVMEL IATS v5.1 - AI Trader",
+    page_title="HOVMEL IATS v6.0 - Multi-Strategy",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 # ============================================================
-# CSS СТИЛИ
+# CSS СТИЛИ (без изменений)
 # ============================================================
 st.markdown("""
 <style>
@@ -70,10 +70,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СТАТИСТИКИ ОБУЧЕНИЯ
+# ФУНКЦИЯ СТАТИСТИКИ ОБУЧЕНИЯ
 # ============================================================
 def display_learning_stats():
-    """Отображает график кумулятивной прибыли на основе истории сделок"""
     if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
         st.markdown("#### 📊 Статистика обучения")
         trades = st.session_state.strategy.trade_history
@@ -97,10 +96,9 @@ def display_learning_stats():
             st.plotly_chart(fig_learn, use_container_width=True)
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ЗАПУСКА ФОНОВОГО ПОТОКА
+# ФУНКЦИЯ ЗАПУСКА ФОНОВОГО ПОТОКА
 # ============================================================
 def start_bot_thread():
-    """Запускает фоновый цикл бота, если он не запущен"""
     if st.session_state.running and st.session_state.strategy:
         if not st.session_state.thread_started:
             def bot_loop():
@@ -246,35 +244,20 @@ class DeepSeekAIAssistant:
             return {"error": str(e)}
 
 # ============================================================
-# СТРАТЕГИЯ IATS (полная версия)
+# БАЗОВЫЙ КЛАСС СТРАТЕГИИ (для расширения)
 # ============================================================
-class IATSStrategyAI:
-    def __init__(self, exchange, symbol, config, ai_assistant):
+class BaseStrategy:
+    """Базовый класс для всех стратегий. Все стратегии должны наследовать его."""
+    def __init__(self, exchange, symbol, config):
         self.exchange = exchange
         self.symbol = symbol
         self.config = config
-        self.ai = ai_assistant
-        self.tick_size = self._get_tick_size()
         self.position = None
-        self.averaging_count = 0
-        self.is_reversed = False
-        self.reverse_count = 0
-        self.trailing_active = False
-        self.trailing_level = 0.0
-        self.last_entry_time = 0
-        self.ai_last_update = None
-        self.ai_suggestions = {}
-        self.trading_paused = False
-        self.pause_reason = ""
-        self.pause_until = None
         self.trade_history = []
-        self.learning_stats = {}
-        self.best_hours = []
-        self.worst_hours = []
 
-    def _get_tick_size(self):
-        market = self.exchange.market(self.symbol)
-        return market['precision']['price']
+    def tick(self):
+        """Основной метод, вызываемый каждый тик. Должен быть переопределён."""
+        raise NotImplementedError("Метод tick() должен быть переопределён в дочернем классе")
 
     def get_balance(self, currency='USDT'):
         try:
@@ -289,6 +272,33 @@ class IATSStrategyAI:
             return ticker['last']
         except:
             return 0.0
+
+# ============================================================
+# СТРАТЕГИЯ IATS (полная версия)
+# ============================================================
+class IATSStrategyAI(BaseStrategy):
+    def __init__(self, exchange, symbol, config, ai_assistant):
+        super().__init__(exchange, symbol, config)
+        self.ai = ai_assistant
+        self.tick_size = self._get_tick_size()
+        self.averaging_count = 0
+        self.is_reversed = False
+        self.reverse_count = 0
+        self.trailing_active = False
+        self.trailing_level = 0.0
+        self.last_entry_time = 0
+        self.ai_last_update = None
+        self.ai_suggestions = {}
+        self.trading_paused = False
+        self.pause_reason = ""
+        self.pause_until = None
+        self.learning_stats = {}
+        self.best_hours = []
+        self.worst_hours = []
+
+    def _get_tick_size(self):
+        market = self.exchange.market(self.symbol)
+        return market['precision']['price']
 
     def fetch_ohlcv(self, limit=200):
         try:
@@ -572,6 +582,7 @@ class IATSStrategyAI:
             'is_reversed': self.is_reversed
         }
         self.trade_history.append(trade_data)
+        st.session_state.trade_history = self.trade_history  # сохраняем в сессию для UI
         new_row = pd.DataFrame({
             'time': [datetime.now()],
             'symbol': [self.symbol],
@@ -819,6 +830,48 @@ class IATSStrategyAI:
                             st.session_state.logs.append(f"🧪 [DRY] Переворот выполнен")
 
 # ============================================================
+# ПРОСТАЯ СТРАТЕГИЯ (SMA-кроссовер) — ДЛЯ ПРИМЕРА
+# ============================================================
+class SMAStrategy(BaseStrategy):
+    def __init__(self, exchange, symbol, config):
+        super().__init__(exchange, symbol, config)
+        self.position = None
+        self.fast_period = config.get('fast_period', 10)
+        self.slow_period = config.get('slow_period', 30)
+
+    def tick(self):
+        current_price = self.get_current_price()
+        ohlcv = self.exchange.fetch_ohlcv(self.symbol, '1m', limit=50)
+        if not ohlcv:
+            return
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['sma_fast'] = df['close'].rolling(self.fast_period).mean()
+        df['sma_slow'] = df['close'].rolling(self.slow_period).mean()
+        fast = df['sma_fast'].iloc[-1]
+        slow = df['sma_slow'].iloc[-1]
+        prev_fast = df['sma_fast'].iloc[-2]
+        prev_slow = df['sma_slow'].iloc[-2]
+
+        if self.position is None:
+            if fast > slow and prev_fast <= prev_slow:
+                # Сигнал на покупку
+                lot = self.config.get('lot', 0.001)
+                st.session_state.logs.append(f"🟢 SMA: BUY сигнал по {current_price}")
+                if not st.session_state.dry_run:
+                    order = self.exchange.create_market_order(self.symbol, 'buy', lot)
+                    if order:
+                        self.position = {'side': 'buy', 'entry_price': current_price, 'volume': lot}
+                else:
+                    self.position = {'side': 'buy', 'entry_price': current_price, 'volume': lot}
+        else:
+            # Закрытие по противоположному сигналу
+            if fast < slow and prev_fast >= prev_slow:
+                st.session_state.logs.append(f"🔴 SMA: SELL сигнал, закрываем позицию")
+                if not st.session_state.dry_run:
+                    self.exchange.create_market_order(self.symbol, 'sell', self.position['volume'])
+                self.position = None
+
+# ============================================================
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ
 # ============================================================
 if 'mode' not in st.session_state:
@@ -853,8 +906,13 @@ if 'ai_assistant' not in st.session_state:
     st.session_state.ai_assistant = DeepSeekAIAssistant()
 if 'thread_started' not in st.session_state:
     st.session_state.thread_started = False
+if 'selected_strategy' not in st.session_state:
+    st.session_state.selected_strategy = 'IATS'  # по умолчанию IATS
+if 'trade_history' not in st.session_state:
+    st.session_state.trade_history = []
 
 SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+STRATEGIES = ['IATS', 'SMA (простая)']
 
 # ============================================================
 # ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ
@@ -887,7 +945,7 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=100):
 # ============================================================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ============================================================
-st.markdown('<div class="main-header">🧠 HOVMEL IATS v5.1 — AI ШЕДЕВР</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🧠 HOVMEL v6.0 — МУЛЬТИ-СТРАТЕГИЯ</div>', unsafe_allow_html=True)
 
 col_status1, col_status2, col_status3, col_status4, col_status5, col_status6 = st.columns(6)
 
@@ -900,7 +958,7 @@ with col_status2:
     if st.session_state.status == 'stopped':
         status_class = "status-stopped"
         status_text = "⏹ СТОП"
-    elif st.session_state.strategy and st.session_state.strategy.trading_paused:
+    elif st.session_state.strategy and hasattr(st.session_state.strategy, 'trading_paused') and st.session_state.strategy.trading_paused:
         status_class = "status-paused"
         status_text = "⏸ ПАУЗА"
     else:
@@ -932,6 +990,17 @@ with col_sym1:
         st.session_state.strategy = None
         st.rerun()
 
+# ===== ВЫБОР СТРАТЕГИИ =====
+col_strategy1, col_strategy2 = st.columns([2, 10])
+with col_strategy1:
+    new_strategy = st.selectbox("Стратегия", STRATEGIES, index=STRATEGIES.index(st.session_state.selected_strategy))
+    if new_strategy != st.session_state.selected_strategy:
+        st.session_state.selected_strategy = new_strategy
+        st.session_state.logs.append(f"🔄 Переключено на стратегию {new_strategy}")
+        st.session_state.strategy = None
+        st.session_state.position = None
+        st.rerun()
+
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Торговля", "📋 Журнал", "📈 Эксперт", "🧠 AI-Аналитика"])
 
 # ========== ВКЛАДКА 1: ТОРГОВЛЯ ==========
@@ -947,7 +1016,7 @@ with tab1:
     fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='#4488ff', width=1.5), name='SMA 50'), row=1, col=1)
     if st.session_state.position:
         entry_price = st.session_state.position.get('entry_price', 0)
-        avg_price = st.session_state.position.get('avg_price', entry_price)
+        avg_price = st.session_state.position.get('avg_price', entry_price) if 'avg_price' in st.session_state.position else entry_price
         fig.add_hline(y=entry_price, line=dict(color='#ffd700', width=1, dash='dash'), annotation_text=f'Entry: {entry_price:.1f}', annotation_position='top left', row=1, col=1)
         fig.add_hline(y=avg_price, line=dict(color='#ff8800', width=1.5, dash='dashdot'), annotation_text=f'Avg: {avg_price:.1f}', annotation_position='bottom left', row=1, col=1)
     fig.add_trace(go.Bar(x=df['timestamp'], y=df['volume'], name='Volume', marker_color='#4466aa', opacity=0.6), row=2, col=1)
@@ -963,12 +1032,12 @@ with tab1:
         if st.button("▶️ СТАРТ", use_container_width=True):
             if not st.session_state.running:
                 try:
-                    api_key = os.getenv('OKX_API_KEY') or st.secrets.get('OKX_API_KEY')
-                    secret = os.getenv('OKX_API_SECRET') or st.secrets.get('OKX_API_SECRET')
-                    passphrase = os.getenv('OKX_API_PASSPHRASE') or st.secrets.get('OKX_API_PASSPHRASE')
-                    if not api_key or not secret or not passphrase:
-                        st.error("❌ Не заданы API-ключи OKX!")
-                    else:
+                    # Попытка получить ключи (если есть)
+                    api_key = os.getenv('OKX_API_KEY') or st.secrets.get('OKX_API_KEY', '')
+                    secret = os.getenv('OKX_API_SECRET') or st.secrets.get('OKX_API_SECRET', '')
+                    passphrase = os.getenv('OKX_API_PASSPHRASE') or st.secrets.get('OKX_API_PASSPHRASE', '')
+                    
+                    if api_key and secret and passphrase:
                         exchange = ccxt.okx({
                             'apiKey': api_key,
                             'secret': secret,
@@ -976,25 +1045,45 @@ with tab1:
                             'enableRateLimit': True,
                             'options': {'defaultType': 'spot' if st.session_state.mode == 'demo' else 'future'}
                         })
-                        st.session_state.exchange = exchange
-                        config = {
-                            'risk_percent': st.session_state.get('risk', 1.0),
-                            'max_lot': st.session_state.get('max_lot', 0.01),
-                            'sl_ticks': st.session_state.get('sl_ticks', 30),
-                            'tp_ticks': st.session_state.get('tp_ticks', 30),
-                            'max_averaging': st.session_state.get('max_avg', 4),
-                            'averaging_step_ticks': st.session_state.get('avg_step', 60),
-                            'averaging_coefficient': st.session_state.get('avg_coef', 1.5),
-                            'max_reverses': st.session_state.get('max_rev', 3),
-                            'enable_trailing': st.session_state.get('trailing', True),
-                            'trailing_distance_ticks': st.session_state.get('trail_dist', 40)
-                        }
+                        st.session_state.logs.append("🔑 Подключение с API-ключами OKX")
+                    else:
+                        exchange = ccxt.okx({
+                            'enableRateLimit': True,
+                            'options': {'defaultType': 'spot'}
+                        })
+                        st.session_state.logs.append("🌐 Публичный доступ (без API-ключей) — только симуляция")
+                        st.session_state.dry_run = True
+                    
+                    st.session_state.exchange = exchange
+                    # Общие настройки для всех стратегий
+                    config = {
+                        'risk_percent': st.session_state.get('risk', 1.0),
+                        'max_lot': st.session_state.get('max_lot', 0.01),
+                        'sl_ticks': st.session_state.get('sl_ticks', 30),
+                        'tp_ticks': st.session_state.get('tp_ticks', 30),
+                        'max_averaging': st.session_state.get('max_avg', 4),
+                        'averaging_step_ticks': st.session_state.get('avg_step', 60),
+                        'averaging_coefficient': st.session_state.get('avg_coef', 1.5),
+                        'max_reverses': st.session_state.get('max_rev', 3),
+                        'enable_trailing': st.session_state.get('trailing', True),
+                        'trailing_distance_ticks': st.session_state.get('trail_dist', 40)
+                    }
+                    # Создаём стратегию согласно выбору
+                    if st.session_state.selected_strategy == 'IATS':
                         st.session_state.strategy = IATSStrategyAI(exchange, st.session_state.selected_symbol, config, st.session_state.ai_assistant)
-                        st.session_state.balance = st.session_state.strategy.get_balance('USDT')
-                        st.session_state.running = True
-                        st.session_state.status = 'running'
-                        st.session_state.logs.append(f"🚀 Бот запущен на {st.session_state.selected_symbol}")
-                        st.rerun()
+                    elif st.session_state.selected_strategy == 'SMA (простая)':
+                        # Для SMA используем упрощённый конфиг
+                        sma_config = {'lot': config.get('max_lot', 0.01), 'fast_period': 10, 'slow_period': 30}
+                        st.session_state.strategy = SMAStrategy(exchange, st.session_state.selected_symbol, sma_config)
+                    else:
+                        st.error(f"Неизвестная стратегия: {st.session_state.selected_strategy}")
+                        st.stop()
+                    
+                    st.session_state.balance = st.session_state.strategy.get_balance('USDT')
+                    st.session_state.running = True
+                    st.session_state.status = 'running'
+                    st.session_state.logs.append(f"🚀 Бот запущен на {st.session_state.selected_symbol} (стратегия: {st.session_state.selected_strategy}, режим: {'Dry Run' if st.session_state.dry_run else 'Реальный'})")
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Ошибка: {e}")
     with col2:
@@ -1109,7 +1198,7 @@ with tab3:
                                  margin=dict(l=10, r=10, t=20, b=10))
             st.plotly_chart(fig_eq, use_container_width=True)
 
-    with st.expander("⚙️ Настройки стратегии"):
+    with st.expander("⚙️ Настройки стратегии (для IATS)"):
         col1, col2 = st.columns(2)
         with col1:
             st.slider("Риск на сделку (%)", 0.1, 5.0, 1.0, 0.1, key="risk")
@@ -1132,13 +1221,13 @@ with tab4:
     with col1:
         st.markdown("#### 📊 Текущий анализ")
         if st.button("🔄 Обновить AI-аналитику", use_container_width=True):
-            if st.session_state.strategy:
+            if st.session_state.strategy and hasattr(st.session_state.strategy, 'check_ai_trend'):
                 st.session_state.strategy.check_ai_trend()
                 st.session_state.strategy.check_ai_sentiment()
                 st.rerun()
             else:
-                st.warning("Сначала запустите бота (▶️ СТАРТ)")
-        if st.session_state.strategy and st.session_state.strategy.ai_suggestions:
+                st.warning("Сначала запустите бота (▶️ СТАРТ) и выберите стратегию IATS")
+        if hasattr(st.session_state.strategy, 'ai_suggestions') and st.session_state.strategy.ai_suggestions:
             suggestion = st.session_state.strategy.ai_suggestions
             trend_emoji = "📈" if suggestion.get('trend') == 'up' else "📉" if suggestion.get('trend') == 'down' else "➡️"
             trend_text = "ВОСХОДЯЩИЙ" if suggestion.get('trend') == 'up' else "НИСХОДЯЩИЙ" if suggestion.get('trend') == 'down' else "НЕЙТРАЛЬНЫЙ"
@@ -1157,24 +1246,25 @@ with tab4:
             st.info("Ожидание анализа от AI...")
     with col2:
         st.markdown("#### 📰 Экономический календарь")
-        if st.session_state.strategy:
+        if hasattr(st.session_state.strategy, 'trading_paused'):
             if st.session_state.strategy.trading_paused:
                 st.warning(f"⏸️ Торговля ПРИОСТАНОВЛЕНА!\n\nПричина: {st.session_state.strategy.pause_reason}")
             else:
                 st.success("✅ Торговля активна. AI не обнаружил критических новостей.")
-            events = st.session_state.strategy._get_financial_calendar()
-            if events:
-                st.markdown("#### 📅 Ближайшие события")
-                for ev in events[:3]:
-                    st.write(f"• {ev['date']} {ev['time']} — **{ev['event']}** (важность: {ev['importance']})")
-            else:
-                st.write("Сегодня важных событий нет")
+            if hasattr(st.session_state.strategy, '_get_financial_calendar'):
+                events = st.session_state.strategy._get_financial_calendar()
+                if events:
+                    st.markdown("#### 📅 Ближайшие события")
+                    for ev in events[:3]:
+                        st.write(f"• {ev['date']} {ev['time']} — **{ev['event']}** (важность: {ev['importance']})")
+                else:
+                    st.write("Сегодня важных событий нет")
         else:
-            st.info("Запустите бота для получения данных")
+            st.info("Запустите бота (IATS) для получения данных")
         st.markdown("#### 🔌 Статус AI")
         if st.session_state.ai_assistant.api_key:
             st.success("✅ DeepSeek API подключён")
-            if st.session_state.strategy:
+            if hasattr(st.session_state.strategy, 'ai_last_update'):
                 st.write(f"**Последнее обновление AI:** {st.session_state.strategy.ai_last_update or 'Никогда'}")
         else:
             st.error("❌ DeepSeek API не настроен! Добавьте DEEPSEEK_API_KEY")
@@ -1187,11 +1277,10 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# ===== ВЫЗОВ ФУНКЦИИ СТАТИСТИКИ ОБУЧЕНИЯ =====
 display_learning_stats()
 
 # ============================================================
-# ЗАПУСК ФОНОВОГО ПОТОКА (ВЫЗОВ ФУНКЦИИ)
+# ЗАПУСК ФОНОВОГО ПОТОКА
 # ============================================================
 start_bot_thread()
 
@@ -1201,7 +1290,7 @@ start_bot_thread()
 st.markdown("---")
 st.markdown(
 '<div style="text-align:center;color:#666;font-size:12px;padding:20px;">'
-'HOVMEL IATS — ШЕДЕВР v5.1 | AI-ассистент DeepSeek | Защита убыточных позиций | '
+'HOVMEL IATS — ШЕДЕВР v6.0 | Мульти-стратегия | Работа без ключей | '
 'MT5-интерфейс | Поддержка нескольких инструментов | © 2024 HOVMEL Trading Systems'
 '</div>',
 unsafe_allow_html=True

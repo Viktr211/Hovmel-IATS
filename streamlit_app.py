@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v7.0 (ТЕРМИНАЛ-ПРОФИ)
+# HOVMEL IATS — ШЕДЕВР v7.1 (ЖИВОЙ ГРАФИК + WEBSOCKET)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -16,13 +16,15 @@ import json
 import os
 import math
 import requests
+import asyncio
+import websockets
 from dotenv import load_dotenv
 from streamlit_autorefresh import st_autorefresh
 
 load_dotenv()
 
 st.set_page_config(
-    page_title="HOVMEL IATS v7.0 - Terminal Pro",
+    page_title="HOVMEL IATS v7.1 - Live Terminal",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -35,7 +37,7 @@ if st.session_state.get('running', False):
     st_autorefresh(interval=500, key="live_chart_refresh")
 
 # ============================================================
-# CSS СТИЛИ (терминальный вид)
+# CSS СТИЛИ (без изменений)
 # ============================================================
 st.markdown("""
 <style>
@@ -79,7 +81,154 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# ФУНКЦИЯ ЗАПУСКА ФОНОВОГО ПОТОКА (каждую секунду)
+# ИНИЦИАЛИЗАЦИЯ ГЛОБАЛЬНЫХ БУФЕРОВ
+# ============================================================
+if 'tick_buffer' not in st.session_state:
+    st.session_state.tick_buffer = []
+if 'ohlcv_buffer' not in st.session_state:
+    st.session_state.ohlcv_buffer = pd.DataFrame(columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+if 'ws_running' not in st.session_state:
+    st.session_state.ws_running = False
+if 'current_price' not in st.session_state:
+    st.session_state.current_price = 0
+if 'balance' not in st.session_state:
+    st.session_state.balance = 3000.0
+if 'demo_balance' not in st.session_state:
+    st.session_state.demo_balance = 3000.0
+if 'position' not in st.session_state:
+    st.session_state.position = None
+if 'pnl' not in st.session_state:
+    st.session_state.pnl = 0
+if 'logs' not in st.session_state:
+    st.session_state.logs = []
+if 'running' not in st.session_state:
+    st.session_state.running = False
+if 'status' not in st.session_state:
+    st.session_state.status = 'stopped'
+if 'dry_run' not in st.session_state:
+    st.session_state.dry_run = True
+if 'mode' not in st.session_state:
+    st.session_state.mode = 'demo'
+if 'selected_symbol' not in st.session_state:
+    st.session_state.selected_symbol = 'BTC/USDT'
+if 'timeframe' not in st.session_state:
+    st.session_state.timeframe = '1m'
+if 'strategy' not in st.session_state:
+    st.session_state.strategy = None
+if 'exchange' not in st.session_state:
+    st.session_state.exchange = None
+if 'thread_started' not in st.session_state:
+    st.session_state.thread_started = False
+if 'selected_strategy' not in st.session_state:
+    st.session_state.selected_strategy = 'IATS'
+if 'trade_history' not in st.session_state:
+    st.session_state.trade_history = []
+if 'history_data' not in st.session_state:
+    st.session_state.history_data = pd.DataFrame(columns=['time', 'symbol', 'side', 'volume', 'profit'])
+if 'equity_data' not in st.session_state:
+    st.session_state.equity_data = pd.DataFrame(columns=['time', 'equity'])
+if 'markers' not in st.session_state:
+    st.session_state.markers = []
+if 'manual_orders' not in st.session_state:
+    st.session_state.manual_orders = []
+if 'manual_positions' not in st.session_state:
+    st.session_state.manual_positions = []
+
+SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+STRATEGIES = ['IATS', 'SMA (простая)']
+TIMEFRAMES = ['1m', '5m', '15m', '1h', '1d']
+
+# ============================================================
+# ФУНКЦИЯ ОБНОВЛЕНИЯ СВЕЧЕЙ
+# ============================================================
+def update_candles(tick_price, tick_volume=0, symbol='BTC/USDT'):
+    """Добавляет тик в текущую свечу или создаёт новую"""
+    now = datetime.now()
+    current_minute = now.replace(second=0, microsecond=0)
+    
+    df = st.session_state.ohlcv_buffer
+    
+    if df.empty or df['timestamp'].iloc[-1] != current_minute:
+        # Новая свеча
+        new_row = pd.DataFrame({
+            'timestamp': [current_minute],
+            'open': [tick_price],
+            'high': [tick_price],
+            'low': [tick_price],
+            'close': [tick_price],
+            'volume': [tick_volume]
+        })
+        st.session_state.ohlcv_buffer = pd.concat([df, new_row], ignore_index=True)
+        if len(st.session_state.ohlcv_buffer) > 200:
+            st.session_state.ohlcv_buffer = st.session_state.ohlcv_buffer.iloc[-200:]
+    else:
+        # Обновляем текущую свечу
+        idx = df.index[-1]
+        st.session_state.ohlcv_buffer.at[idx, 'high'] = max(df.at[idx, 'high'], tick_price)
+        st.session_state.ohlcv_buffer.at[idx, 'low'] = min(df.at[idx, 'low'], tick_price)
+        st.session_state.ohlcv_buffer.at[idx, 'close'] = tick_price
+        st.session_state.ohlcv_buffer.at[idx, 'volume'] += tick_volume
+
+# ============================================================
+# WEBSOCKET-ХЕНДЛЕР (для получения тиков в реальном времени)
+# ============================================================
+async def websocket_handler():
+    """Подключение к OKX WebSocket и обработка тиков"""
+    symbol = st.session_state.selected_symbol
+    inst_id = symbol.replace('/', '-')  # BTC/USDT → BTC-USDT
+    
+    uri = "wss://ws.okx.com:8443/ws/v5/public"
+    
+    try:
+        async with websockets.connect(uri) as websocket:
+            subscribe_msg = {
+                "op": "subscribe",
+                "args": [{
+                    "channel": "trades",
+                    "instId": inst_id
+                }]
+            }
+            await websocket.send(json.dumps(subscribe_msg))
+            st.session_state.logs.append(f"✅ Подписка на trades для {symbol}")
+            
+            while st.session_state.get('running', False):
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                    data = json.loads(message)
+                    
+                    if 'data' in data and len(data['data']) > 0:
+                        for trade in data['data']:
+                            price = float(trade.get('px', 0))
+                            volume = float(trade.get('sz', 0))
+                            if price > 0:
+                                update_candles(price, volume, symbol)
+                                st.session_state.current_price = price
+                                
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    st.session_state.logs.append(f"⚠️ WebSocket ошибка: {e}")
+                    
+    except Exception as e:
+        st.session_state.logs.append(f"❌ WebSocket подключение failed: {e}")
+        st.session_state.ws_running = False
+
+def start_websocket():
+    """Запускает WebSocket в отдельном потоке"""
+    if not st.session_state.ws_running:
+        st.session_state.ws_running = True
+        st.session_state.logs.append("🔌 Запуск WebSocket...")
+        
+        def run_ws():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(websocket_handler())
+        
+        thread = threading.Thread(target=run_ws, daemon=True)
+        thread.start()
+
+# ============================================================
+# ФУНКЦИЯ ЗАПУСКА ФОНОВОГО ПОТОКА (стратегия + WebSocket)
 # ============================================================
 def start_bot_thread():
     if st.session_state.running and st.session_state.strategy:
@@ -95,13 +244,16 @@ def start_bot_thread():
             thread = threading.Thread(target=bot_loop, daemon=True)
             thread.start()
             st.session_state.thread_started = True
-            st.session_state.logs.append("🧵 Фоновый поток запущен (тик каждую секунду)")
+            st.session_state.logs.append("🧵 Фоновый поток стратегии запущен")
+        # Запускаем WebSocket отдельно (если ещё не запущен)
+        if not st.session_state.ws_running:
+            start_websocket()
         if st.session_state.running:
             time.sleep(0.5)
             st.rerun()
 
 # ============================================================
-# AI-АССИСТЕНТ (DeepSeek) — сокращённый для краткости
+# AI-АССИСТЕНТ (DeepSeek) — сокращённый
 # ============================================================
 class DeepSeekAIAssistant:
     def __init__(self):
@@ -119,7 +271,7 @@ class DeepSeekAIAssistant:
             'trend': f"""
             Проанализируй рыночные данные и определи тренд:
             {json.dumps(data, indent=2)}
-            Ответь строго в JSON формате:
+            Ответь строго в JSON:
             {{
                 "trend": "up" или "down" или "neutral",
                 "confidence": число,
@@ -206,7 +358,7 @@ class DeepSeekAIAssistant:
             return {"error": str(e)}
 
 # ============================================================
-# БАЗОВЫЙ КЛАСС СТРАТЕГИИ И IATS (упрощённый для экономии места)
+# БАЗОВЫЙ КЛАСС СТРАТЕГИИ И IATS
 # ============================================================
 class BaseStrategy:
     def __init__(self, exchange, symbol, config):
@@ -230,11 +382,7 @@ class BaseStrategy:
             return st.session_state.demo_balance
 
     def get_current_price(self):
-        try:
-            ticker = self.exchange.fetch_ticker(self.symbol)
-            return ticker['last']
-        except:
-            return 0.0
+        return st.session_state.current_price or 0.0
 
 class IATSStrategyAI(BaseStrategy):
     def __init__(self, exchange, symbol, config, ai_assistant):
@@ -629,61 +777,7 @@ class SMAStrategy(BaseStrategy):
                 self.position = None
 
 # ============================================================
-# ИНИЦИАЛИЗАЦИЯ СЕССИИ
-# ============================================================
-if 'mode' not in st.session_state:
-    st.session_state.mode = 'demo'
-if 'status' not in st.session_state:
-    st.session_state.status = 'stopped'
-if 'dry_run' not in st.session_state:
-    st.session_state.dry_run = True
-if 'logs' not in st.session_state:
-    st.session_state.logs = []
-if 'current_price' not in st.session_state:
-    st.session_state.current_price = 0
-if 'balance' not in st.session_state:
-    st.session_state.balance = 3000.0
-if 'demo_balance' not in st.session_state:
-    st.session_state.demo_balance = 3000.0
-if 'position' not in st.session_state:
-    st.session_state.position = None
-if 'pnl' not in st.session_state:
-    st.session_state.pnl = 0
-if 'history_data' not in st.session_state:
-    st.session_state.history_data = pd.DataFrame(columns=['time', 'symbol', 'side', 'volume', 'profit'])
-if 'equity_data' not in st.session_state:
-    st.session_state.equity_data = pd.DataFrame(columns=['time', 'equity'])
-if 'selected_symbol' not in st.session_state:
-    st.session_state.selected_symbol = 'BTC/USDT'
-if 'timeframe' not in st.session_state:
-    st.session_state.timeframe = '1m'
-if 'strategy' not in st.session_state:
-    st.session_state.strategy = None
-if 'exchange' not in st.session_state:
-    st.session_state.exchange = None
-if 'running' not in st.session_state:
-    st.session_state.running = False
-if 'ai_assistant' not in st.session_state:
-    st.session_state.ai_assistant = DeepSeekAIAssistant()
-if 'thread_started' not in st.session_state:
-    st.session_state.thread_started = False
-if 'selected_strategy' not in st.session_state:
-    st.session_state.selected_strategy = 'IATS'
-if 'trade_history' not in st.session_state:
-    st.session_state.trade_history = []
-if 'markers' not in st.session_state:
-    st.session_state.markers = []
-if 'manual_orders' not in st.session_state:
-    st.session_state.manual_orders = []  # список ручных ордеров (симуляция)
-if 'manual_positions' not in st.session_state:
-    st.session_state.manual_positions = []  # список ручных позиций (симуляция)
-
-SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
-STRATEGIES = ['IATS', 'SMA (простая)']
-TIMEFRAMES = ['1m', '5m', '15m', '1h', '1d']
-
-# ============================================================
-# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ (БЕЗ КЭШИРОВАНИЯ)
+# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ (FALLBACK, ЕСЛИ WEBSOCKET ЕЩЁ НЕ ДАЛ ДАННЫХ)
 # ============================================================
 def fetch_ohlcv(symbol, timeframe='1m', limit=150):
     try:
@@ -712,9 +806,8 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=150):
 # ============================================================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ============================================================
-st.markdown('<div class="main-header">📈 HOVMEL v7.0 — ТЕРМИНАЛ ПРОФИ</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">📈 HOVMEL v7.1 — ЖИВОЙ ТЕРМИНАЛ</div>', unsafe_allow_html=True)
 
-# ---- Верхняя панель статуса ----
 col_status1, col_status2, col_status3, col_status4, col_status5, col_status6 = st.columns(6)
 with col_status1:
     mode_text = "🟢 ДЕМО" if st.session_state.mode == 'demo' else "🔴 РЕАЛ"
@@ -742,7 +835,6 @@ with col_status5:
 with col_status6:
     st.markdown(f'<div style="text-align:right;color:#888;">{datetime.now().strftime("%H:%M:%S")}</div>', unsafe_allow_html=True)
 
-# ---- Выбор инструмента, таймфрейма, стратегии ----
 col_sym1, col_sym2, col_tf = st.columns([2, 2, 2])
 with col_sym1:
     new_symbol = st.selectbox("Инструмент", SYMBOLS, index=SYMBOLS.index(st.session_state.selected_symbol))
@@ -758,6 +850,7 @@ with col_tf:
         st.session_state.timeframe = new_tf
         st.session_state.logs.append(f"🔄 Таймфрейм изменён на {new_tf}")
         st.rerun()
+
 col_strategy1, col_strategy2 = st.columns([2, 10])
 with col_strategy1:
     new_strategy = st.selectbox("Стратегия", STRATEGIES, index=STRATEGIES.index(st.session_state.selected_strategy))
@@ -768,22 +861,26 @@ with col_strategy1:
         st.session_state.position = None
         st.rerun()
 
-# ---- Вкладки ----
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Торговля", "📋 Журнал", "📈 Эксперт", "🧠 AI-Аналитика"])
 
 # ========== ВКЛАДКА 1: ТОРГОВЛЯ ==========
 with tab1:
-    # ---- ГРАФИК ----
-    df = fetch_ohlcv(st.session_state.selected_symbol, st.session_state.timeframe, limit=150)
+    # Используем данные из буфера (если есть), иначе fallback
+    if not st.session_state.ohlcv_buffer.empty:
+        df = st.session_state.ohlcv_buffer.copy()
+    else:
+        df = fetch_ohlcv(st.session_state.selected_symbol, st.session_state.timeframe, limit=150)
+
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,
                          row_heights=[0.7, 0.3], subplot_titles=(f'{st.session_state.selected_symbol} ({st.session_state.timeframe})', 'Объём'))
     fig.add_trace(go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
                                    name=st.session_state.selected_symbol, increasing_line_color='#00ff88', decreasing_line_color='#ff4444'), row=1, col=1)
     # SMA
-    df['sma20'] = df['close'].rolling(20).mean()
-    df['sma50'] = df['close'].rolling(50).mean()
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma20'], line=dict(color='#ffaa00', width=1.5), name='SMA 20'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='#4488ff', width=1.5), name='SMA 50'), row=1, col=1)
+    if len(df) > 20:
+        df['sma20'] = df['close'].rolling(20).mean()
+        df['sma50'] = df['close'].rolling(50).mean()
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma20'], line=dict(color='#ffaa00', width=1.5), name='SMA 20'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='#4488ff', width=1.5), name='SMA 50'), row=1, col=1)
 
     # Линия текущей цены
     current_price = st.session_state.current_price if st.session_state.current_price else df['close'].iloc[-1]
@@ -833,7 +930,7 @@ with tab1:
     fig.update_yaxes(gridcolor='#1a1a2e', showgrid=True)
     st.plotly_chart(fig, use_container_width=True, key="live_chart")
 
-    # ---- Панель управления (кнопки) ----
+    # ---- ПАНЕЛЬ УПРАВЛЕНИЯ ----
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         if st.button("▶️ СТАРТ", use_container_width=True):
@@ -877,7 +974,7 @@ with tab1:
                         st.session_state.balance = st.session_state.strategy.get_balance('USDT')
                     st.session_state.running = True
                     st.session_state.status = 'running'
-                    st.session_state.logs.append(f"🚀 Бот запущен на {st.session_state.selected_symbol} (стратегия: {st.session_state.selected_strategy}, режим: {'Dry Run' if st.session_state.dry_run else 'Реальный'})")
+                    st.session_state.logs.append(f"🚀 Бот запущен на {st.session_state.selected_symbol} (стратегия: {st.session_state.selected_strategy})")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Ошибка: {e}")
@@ -885,6 +982,7 @@ with tab1:
         if st.button("⏹ СТОП", use_container_width=True):
             st.session_state.running = False
             st.session_state.status = 'stopped'
+            st.session_state.ws_running = False
             st.session_state.logs.append("⏹ Бот остановлен")
             st.rerun()
     with col3:
@@ -915,7 +1013,7 @@ with tab1:
             else:
                 st.error("❌ Добавьте DEEPSEEK_API_KEY")
 
-    # ---- Метрики ----
+    # ---- МЕТРИКИ ----
     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
     with col_m1:
         st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">💰 Баланс</div><div class="metric-value metric-green">{st.session_state.balance:.2f}</div></div>', unsafe_allow_html=True)
@@ -936,7 +1034,7 @@ with tab1:
     st.markdown("---")
     st.markdown("### 📋 Торговля (ручное управление)")
 
-    # Отображение текущей позиции бота (если есть)
+    # Отображение текущей позиции
     if st.session_state.position:
         col_pos1, col_pos2, col_pos3, col_pos4, col_pos5 = st.columns(5)
         with col_pos1:
@@ -968,7 +1066,7 @@ with tab1:
     else:
         st.info("Нет открытой позиции")
 
-    # ---- Таблица ордеров (симуляция) ----
+    # ---- Таблица ордеров ----
     st.markdown("#### Активные ордера")
     if st.session_state.manual_orders:
         df_orders = pd.DataFrame(st.session_state.manual_orders)
@@ -995,7 +1093,6 @@ with tab1:
             order_stop = st.number_input("Стоп-цена", min_value=0.0, value=59500.0, step=100.0)
         if st.button("Отправить ордер"):
             if st.session_state.dry_run:
-                # Симуляция
                 st.session_state.logs.append(f"🧪 [DRY] {order_type} {order_side} {order_symbol} объём {order_volume} цена {order_price if order_price else 'рыночная'}")
                 st.session_state.manual_orders.append({
                     'symbol': order_symbol,
@@ -1008,21 +1105,181 @@ with tab1:
                 })
                 st.rerun()
             else:
-                # Реальное исполнение (требует ключей)
                 try:
                     if order_type == "Рыночный":
                         order = st.session_state.exchange.create_market_order(order_symbol, order_side.lower(), order_volume)
                     elif order_type == "Лимитный":
                         order = st.session_state.exchange.create_limit_order(order_symbol, order_side.lower(), order_volume, order_price)
-                    else:  # Стоп-лимитный
+                    else:
                         order = st.session_state.exchange.create_order(order_symbol, 'limit', order_side.lower(), order_volume, order_price, {'stopPrice': order_stop})
                     st.session_state.logs.append(f"✅ Ордер отправлен: {order}")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Ошибка отправки ордера: {e}")
 
-# ========== ОСТАЛЬНЫЕ ВКЛАДКИ (Журнал, Эксперт, AI-Аналитика) — оставляем как в v6.3 ==========
-# Для краткости я не копирую их сюда, но они должны быть такие же, как в предыдущей версии.
+# ========== ВКЛАДКА 2: ЖУРНАЛ ==========
+with tab2:
+    st.markdown("### 📋 Журнал событий")
+    if st.button("🗑 Очистить журнал"):
+        st.session_state.logs = []
+        st.rerun()
+    log_html = ""
+    for log in st.session_state.logs[-100:]:
+        if "🟢" in log or "✅" in log:
+            log_html += f'<div class="log-entry-green">{log}</div>'
+        elif "🔴" in log or "❌" in log:
+            log_html += f'<div class="log-entry-red">{log}</div>'
+        elif "🧠" in log or "AI" in log or "🔄" in log or "⏸️" in log or "🟡" in log or "🛡️" in log:
+            log_html += f'<div class="log-entry-gold">{log}</div>'
+        elif "⏰" in log:
+            log_html += f'<div class="log-entry-orange">{log}</div>'
+        elif "📊" in log or "💰" in log or "📈" in log:
+            log_html += f'<div class="log-entry-blue">{log}</div>'
+        else:
+            log_html += f'<div class="log-entry-white">{log}</div>'
+    if log_html:
+        st.markdown(f'<div class="log-container">{log_html}</div>', unsafe_allow_html=True)
+    else:
+        st.info("Журнал пуст.")
+
+# ========== ВКЛАДКА 3: ЭКСПЕРТ ==========
+with tab3:
+    st.markdown("### 📈 Эксперт — Статистика")
+    if not st.session_state.history_data.empty:
+        total_trades = len(st.session_state.history_data)
+        win_trades = len(st.session_state.history_data[st.session_state.history_data['profit'] > 0])
+        win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
+        total_profit = st.session_state.history_data['profit'].sum()
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Всего сделок", total_trades)
+        col2.metric("Винрейт", f"{win_rate:.1f}%")
+        col3.metric("Общая прибыль", f"{total_profit:.2f} USDT", delta_color="normal" if total_profit >= 0 else "inverse")
+        col4.metric("Средняя прибыль", f"{total_profit/total_trades:.2f}" if total_trades > 0 else "0")
+    else:
+        st.info("Нет данных о сделках")
+
+    if not st.session_state.history_data.empty:
+        st.markdown("### 📜 История сделок")
+        hist_df = st.session_state.history_data.sort_values('time', ascending=False).copy()
+        def color_profit(val):
+            if val > 0:
+                return 'color: #4488ff; font-weight: bold;'
+            elif val < 0:
+                return 'color: #ff4444; font-weight: bold;'
+            else:
+                return ''
+        styled_df = hist_df.style.applymap(color_profit, subset=['profit'])
+        st.dataframe(styled_df, use_container_width=True)
+
+        if not st.session_state.equity_data.empty:
+            fig_eq = go.Figure()
+            fig_eq.add_trace(go.Scatter(x=st.session_state.equity_data['time'], y=st.session_state.equity_data['equity'],
+                                        mode='lines', name='Equity', line=dict(color='#00ff88', width=2)))
+            fig_eq.update_layout(template='plotly_dark', height=300, paper_bgcolor='#0d0d1a', plot_bgcolor='#0d0d1a',
+                                 margin=dict(l=10, r=10, t=20, b=10))
+            st.plotly_chart(fig_eq, use_container_width=True)
+
+    with st.expander("⚙️ Настройки стратегии (для IATS)"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.slider("Риск на сделку (%)", 0.1, 5.0, 1.0, 0.1, key="risk")
+            st.number_input("Макс. лот", 0.001, 0.1, 0.01, 0.001, key="max_lot")
+            st.number_input("Стоп-лосс (тики)", 10, 200, 30, 5, key="sl_ticks")
+            st.number_input("Тейк-профит (тики)", 10, 200, 30, 5, key="tp_ticks")
+            st.number_input("Макс. усреднений", 1, 10, 4, 1, key="max_avg")
+        with col2:
+            st.number_input("Шаг усреднения (тики)", 20, 200, 60, 5, key="avg_step")
+            st.slider("Коэф. усреднения", 1.0, 3.0, 1.5, 0.1, key="avg_coef")
+            st.number_input("Макс. переворотов", 0, 5, 3, 1, key="max_rev")
+            st.checkbox("Включить трейлинг", True, key="trailing")
+            st.number_input("Дистанция трейлинга (тики)", 10, 100, 40, 5, key="trail_dist")
+            st.number_input("Интервал сканирования (сек)", 5, 60, 10, 5, key="scan_interval")
+
+# ========== ВКЛАДКА 4: AI-АНАЛИТИКА ==========
+with tab4:
+    st.markdown("### 🤖 AI-Аналитика (DeepSeek)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### 📊 Текущий анализ")
+        if st.button("🔄 Обновить AI-аналитику", use_container_width=True):
+            if st.session_state.strategy and hasattr(st.session_state.strategy, 'check_ai_trend'):
+                st.session_state.strategy.check_ai_trend()
+                st.session_state.strategy.check_ai_sentiment()
+                st.rerun()
+            else:
+                st.warning("Сначала запустите бота (▶️ СТАРТ) и выберите стратегию IATS")
+        if hasattr(st.session_state.strategy, 'ai_suggestions') and st.session_state.strategy.ai_suggestions:
+            suggestion = st.session_state.strategy.ai_suggestions
+            trend_emoji = "📈" if suggestion.get('trend') == 'up' else "📉" if suggestion.get('trend') == 'down' else "➡️"
+            trend_text = "ВОСХОДЯЩИЙ" if suggestion.get('trend') == 'up' else "НИСХОДЯЩИЙ" if suggestion.get('trend') == 'down' else "НЕЙТРАЛЬНЫЙ"
+            st.metric("Тренд", f"{trend_emoji} {trend_text}", f"Уверенность: {suggestion.get('confidence', 0)}%")
+            st.write(f"**Причина:** {suggestion.get('reason', 'Нет данных')}")
+            st.write(f"**Настроение:** {suggestion.get('sentiment', 'neutral')}")
+            st.write(f"**Рекомендация:** {suggestion.get('next_move', 'wait')}")
+            st.markdown("#### 💡 Рекомендации AI")
+            rec_data = {
+                "Стоп-лосс": f"{suggestion.get('suggested_sl_ticks', 30)} тиков",
+                "Шаг усреднения": f"{suggestion.get('suggested_avg_step', 60)} тиков",
+                "Риск": f"{suggestion.get('suggested_risk', 1.0)}%"
+            }
+            st.dataframe(pd.DataFrame([rec_data]), use_container_width=True)
+        else:
+            st.info("Ожидание анализа от AI...")
+    with col2:
+        st.markdown("#### 📰 Экономический календарь")
+        if hasattr(st.session_state.strategy, 'trading_paused'):
+            if st.session_state.strategy.trading_paused:
+                st.warning(f"⏸️ Торговля ПРИОСТАНОВЛЕНА!\n\nПричина: {st.session_state.strategy.pause_reason}")
+            else:
+                st.success("✅ Торговля активна. AI не обнаружил критических новостей.")
+            if hasattr(st.session_state.strategy, '_get_financial_calendar'):
+                events = st.session_state.strategy._get_financial_calendar()
+                if events:
+                    st.markdown("#### 📅 Ближайшие события")
+                    for ev in events[:3]:
+                        st.write(f"• {ev['date']} {ev['time']} — **{ev['event']}** (важность: {ev['importance']})")
+                else:
+                    st.write("Сегодня важных событий нет")
+        else:
+            st.info("Запустите бота (IATS) для получения данных")
+        st.markdown("#### 🔌 Статус AI")
+        if st.session_state.ai_assistant.api_key:
+            st.success("✅ DeepSeek API подключён")
+            if hasattr(st.session_state.strategy, 'ai_last_update'):
+                st.write(f"**Последнее обновление AI:** {st.session_state.strategy.ai_last_update or 'Никогда'}")
+        else:
+            st.error("❌ DeepSeek API не настроен! Добавьте DEEPSEEK_API_KEY")
+            st.markdown("""
+            **Как получить ключ:**
+            1. Зайди на [platform.deepseek.com](https://platform.deepseek.com)
+            2. Зарегистрируйся и создай API-ключ
+            3. Добавь в `.env` или Secrets Streamlit:
+DEEPSEEK_API_KEY=твой_ключ
+
+text
+""")
+# Показываем статистику обучения
+if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
+st.markdown("#### 📊 Статистика обучения")
+trades = st.session_state.strategy.trade_history
+df_trades = pd.DataFrame(trades)
+if not df_trades.empty:
+    fig_learn = go.Figure()
+    fig_learn.add_trace(go.Scatter(
+        x=df_trades['time'],
+        y=df_trades['profit'].cumsum(),
+        mode='lines',
+        name='Кумулятивная прибыль',
+        line=dict(color='#bb88ff', width=2)
+    ))
+    fig_learn.update_layout(
+        template='plotly_dark',
+        height=250,
+        paper_bgcolor='#0d0d1a',
+        plot_bgcolor='#0d0d1a',
+        margin=dict(l=10, r=10, t=20, b=10)
+    )
+    st.plotly_chart(fig_learn, use_container_width=True)
 
 # ============================================================
 # ЗАПУСК ФОНОВОГО ПОТОКА
@@ -1034,9 +1291,9 @@ start_bot_thread()
 # ============================================================
 st.markdown("---")
 st.markdown(
-    '<div style="text-align:center;color:#666;font-size:12px;padding:20px;">'
-    'HOVMEL IATS — ШЕДЕВР v7.0 | Терминал Pro | Живой график 500мс | Ручное управление | '
-    'MT5-интерфейс | © 2024 HOVMEL Trading Systems'
-    '</div>',
-    unsafe_allow_html=True
+'<div style="text-align:center;color:#666;font-size:12px;padding:20px;">'
+'HOVMEL IATS — ШЕДЕВР v7.1 | Живой график (WebSocket) | Ручное управление | '
+'MT5-интерфейс | © 2024 HOVMEL Trading Systems'
+'</div>',
+unsafe_allow_html=True
 )

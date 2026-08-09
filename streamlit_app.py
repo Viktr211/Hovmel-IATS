@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v7.1 (ЖИВОЙ ГРАФИК + WEBSOCKET)
+# HOVMEL IATS — ШЕДЕВР v7.1_final (ЖИВОЙ ГРАФИК + WEBSOCKET, ИСПРАВЛЕННЫЙ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -804,6 +804,33 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=150):
         })
 
 # ============================================================
+# ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СТАТИСТИКИ ОБУЧЕНИЯ (ВЫНЕСЕНА, ЧТОБЫ ИЗБЕЖАТЬ ОШИБОК ОТСТУПОВ)
+# ============================================================
+def display_learning_stats():
+    """Отображает график кумулятивной прибыли на основе истории сделок"""
+    if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
+        st.markdown("#### 📊 Статистика обучения")
+        trades = st.session_state.strategy.trade_history
+        df_trades = pd.DataFrame(trades)
+        if not df_trades.empty:
+            fig_learn = go.Figure()
+            fig_learn.add_trace(go.Scatter(
+                x=df_trades['time'],
+                y=df_trades['profit'].cumsum(),
+                mode='lines',
+                name='Кумулятивная прибыль',
+                line=dict(color='#bb88ff', width=2)
+            ))
+            fig_learn.update_layout(
+                template='plotly_dark',
+                height=250,
+                paper_bgcolor='#0d0d1a',
+                plot_bgcolor='#0d0d1a',
+                margin=dict(l=10, r=10, t=20, b=10)
+            )
+            st.plotly_chart(fig_learn, use_container_width=True)
+
+# ============================================================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ============================================================
 st.markdown('<div class="main-header">📈 HOVMEL v7.1 — ЖИВОЙ ТЕРМИНАЛ</div>', unsafe_allow_html=True)
@@ -1258,28 +1285,8 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# Показываем статистику обучения
-if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
-st.markdown("#### 📊 Статистика обучения")
-trades = st.session_state.strategy.trade_history
-df_trades = pd.DataFrame(trades)
-if not df_trades.empty:
-    fig_learn = go.Figure()
-    fig_learn.add_trace(go.Scatter(
-        x=df_trades['time'],
-        y=df_trades['profit'].cumsum(),
-        mode='lines',
-        name='Кумулятивная прибыль',
-        line=dict(color='#bb88ff', width=2)
-    ))
-    fig_learn.update_layout(
-        template='plotly_dark',
-        height=250,
-        paper_bgcolor='#0d0d1a',
-        plot_bgcolor='#0d0d1a',
-        margin=dict(l=10, r=10, t=20, b=10)
-    )
-    st.plotly_chart(fig_learn, use_container_width=True)
+# ===== ВЫЗОВ ФУНКЦИИ СТАТИСТИКИ ОБУЧЕНИЯ (БЕЗ ОШИБОК ОТСТУПОВ) =====
+display_learning_stats()
 
 # ============================================================
 # ЗАПУСК ФОНОВОГО ПОТОКА
@@ -1292,7 +1299,7 @@ start_bot_thread()
 st.markdown("---")
 st.markdown(
 '<div style="text-align:center;color:#666;font-size:12px;padding:20px;">'
-'HOVMEL IATS — ШЕДЕВР v7.1 | Живой график (WebSocket) | Ручное управление | '
+'HOVMEL IATS — ШЕДЕВР v7.1_final | Живой график (WebSocket) | Ручное управление | '
 'MT5-интерфейс | © 2024 HOVMEL Trading Systems'
 '</div>',
 unsafe_allow_html=True

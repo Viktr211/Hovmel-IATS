@@ -134,9 +134,7 @@ if 'manual_positions' not in st.session_state:
     st.session_state.manual_positions = []
 # ===== ВАЖНО: инициализация AI-ассистента =====
 if 'ai_assistant' not in st.session_state:
-    st.session_state.ai_assistant = DeepSeekAIAssistant()  # класс определён ниже, но мы его создадим после определения класса. Пока это не критично, так как мы создадим его позже.
-
-SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+     SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
 STRATEGIES = ['IATS', 'SMA (простая)']
 TIMEFRAMES = ['1m', '5m', '15m', '1h', '1d']
 

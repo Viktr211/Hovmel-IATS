@@ -1,5 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v6.0 (МУЛЬТИ-СТРАТЕГИЯ, БЕЗ КЛЮЧЕЙ)
+# HOVMEL IATS — ШЕДЕВР v6.1 (ДЕМО-БАЛАНС, ТАЙМФРЕЙМЫ, МАРКЕРЫ)
 # (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(
-    page_title="HOVMEL IATS v6.0 - Multi-Strategy",
+    page_title="HOVMEL IATS v6.1 - Multi-Strategy",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -247,7 +247,6 @@ class DeepSeekAIAssistant:
 # БАЗОВЫЙ КЛАСС СТРАТЕГИИ (для расширения)
 # ============================================================
 class BaseStrategy:
-    """Базовый класс для всех стратегий. Все стратегии должны наследовать его."""
     def __init__(self, exchange, symbol, config):
         self.exchange = exchange
         self.symbol = symbol
@@ -256,15 +255,19 @@ class BaseStrategy:
         self.trade_history = []
 
     def tick(self):
-        """Основной метод, вызываемый каждый тик. Должен быть переопределён."""
-        raise NotImplementedError("Метод tick() должен быть переопределён в дочернем классе")
+        raise NotImplementedError("Метод tick() должен быть переопределён")
 
     def get_balance(self, currency='USDT'):
+        # Если есть ключи — запрашиваем реальный баланс, иначе используем демо-баланс из сессии
         try:
-            balance = self.exchange.fetch_balance()
-            return balance['free'].get(currency, 0.0)
+            if hasattr(self.exchange, 'apiKey') and self.exchange.apiKey:
+                balance = self.exchange.fetch_balance()
+                return balance['free'].get(currency, 0.0)
+            else:
+                # Демо-режим без ключей
+                return st.session_state.demo_balance
         except:
-            return 0.0
+            return st.session_state.demo_balance
 
     def get_current_price(self):
         try:
@@ -300,9 +303,9 @@ class IATSStrategyAI(BaseStrategy):
         market = self.exchange.market(self.symbol)
         return market['precision']['price']
 
-    def fetch_ohlcv(self, limit=200):
+    def fetch_ohlcv(self, limit=200, timeframe='1m'):
         try:
-            ohlcv = self.exchange.fetch_ohlcv(self.symbol, '1m', limit=limit)
+            ohlcv = self.exchange.fetch_ohlcv(self.symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             return df
@@ -386,7 +389,7 @@ class IATSStrategyAI(BaseStrategy):
     def check_ai_trend(self):
         if not self.ai.api_key:
             return
-        df = self.fetch_ohlcv(100)
+        df = self.fetch_ohlcv(limit=100, timeframe=st.session_state.timeframe)
         if df.empty:
             return
         indicators = self.calculate_indicators(df)
@@ -417,7 +420,7 @@ class IATSStrategyAI(BaseStrategy):
     def check_ai_sentiment(self):
         if not self.ai.api_key:
             return
-        df = self.fetch_ohlcv(50)
+        df = self.fetch_ohlcv(limit=50, timeframe=st.session_state.timeframe)
         if df.empty:
             return
         indicators = self.calculate_indicators(df)
@@ -480,7 +483,7 @@ class IATSStrategyAI(BaseStrategy):
     def adapt_strategy_to_market(self):
         if not self.ai.api_key:
             return
-        df = self.fetch_ohlcv(50)
+        df = self.fetch_ohlcv(limit=50, timeframe=st.session_state.timeframe)
         if df.empty:
             return
         indicators = self.calculate_indicators(df)
@@ -568,9 +571,26 @@ class IATSStrategyAI(BaseStrategy):
                 return False
         return True
 
+    def _add_marker(self, marker_type, price, side, time):
+        """Добавляет маркер в историю для отображения на графике"""
+        if 'markers' not in st.session_state:
+            st.session_state.markers = []
+        st.session_state.markers.append({
+            'type': marker_type,  # 'entry' или 'exit'
+            'price': price,
+            'side': side,  # 'buy' или 'sell'
+            'time': time
+        })
+        # Ограничим количество маркеров для производительности
+        if len(st.session_state.markers) > 200:
+            st.session_state.markers = st.session_state.markers[-200:]
+
     def _close_trade(self, profit):
         if not self.position:
             return
+        # Добавляем маркер выхода
+        self._add_marker('exit', self.get_current_price(), self.position['side'], datetime.now())
+
         trade_data = {
             'time': datetime.now(),
             'symbol': self.symbol,
@@ -582,7 +602,7 @@ class IATSStrategyAI(BaseStrategy):
             'is_reversed': self.is_reversed
         }
         self.trade_history.append(trade_data)
-        st.session_state.trade_history = self.trade_history  # сохраняем в сессию для UI
+        st.session_state.trade_history = self.trade_history
         new_row = pd.DataFrame({
             'time': [datetime.now()],
             'symbol': [self.symbol],
@@ -641,6 +661,8 @@ class IATSStrategyAI(BaseStrategy):
                             self.trailing_active = False
                             self.last_entry_time = time.time()
                             st.session_state.logs.append(f"✅ Позиция открыта")
+                            # Добавляем маркер входа
+                            self._add_marker('entry', current_price, 'buy', datetime.now())
                     else:
                         self.position = {
                             'side': 'buy',
@@ -648,7 +670,12 @@ class IATSStrategyAI(BaseStrategy):
                             'avg_price': current_price,
                             'volume': lot
                         }
+                        self.averaging_count = 0
+                        self.is_reversed = False
+                        self.trailing_active = False
+                        self.last_entry_time = time.time()
                         st.session_state.logs.append(f"🧪 [DRY] Позиция открыта")
+                        self._add_marker('entry', current_price, 'buy', datetime.now())
             return
 
         side = self.position['side']
@@ -733,6 +760,8 @@ class IATSStrategyAI(BaseStrategy):
                                 self.position['volume'] = total_volume
                                 self.averaging_count += 1
                                 st.session_state.logs.append(f"✅ Новая средняя: {new_avg}")
+                                # Добавляем маркер усреднения (можно как точку входа)
+                                self._add_marker('entry', current_price, 'buy', datetime.now())
                         else:
                             total_volume = volume + new_lot
                             new_avg = (avg_price * volume + current_price * new_lot) / total_volume
@@ -740,6 +769,7 @@ class IATSStrategyAI(BaseStrategy):
                             self.position['volume'] = total_volume
                             self.averaging_count += 1
                             st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
+                            self._add_marker('entry', current_price, 'buy', datetime.now())
             else:
                 if current_price >= avg_price + step:
                     new_lot = self.calculate_lot('sell', current_price, current_price + self.config.get('sl_ticks', 30) * self.tick_size)
@@ -754,6 +784,7 @@ class IATSStrategyAI(BaseStrategy):
                                 self.position['volume'] = total_volume
                                 self.averaging_count += 1
                                 st.session_state.logs.append(f"✅ Новая средняя: {new_avg}")
+                                self._add_marker('entry', current_price, 'sell', datetime.now())
                         else:
                             total_volume = volume + new_lot
                             new_avg = (avg_price * volume + current_price * new_lot) / total_volume
@@ -761,6 +792,7 @@ class IATSStrategyAI(BaseStrategy):
                             self.position['volume'] = total_volume
                             self.averaging_count += 1
                             st.session_state.logs.append(f"🧪 [DRY] Усреднение #{self.averaging_count}")
+                            self._add_marker('entry', current_price, 'sell', datetime.now())
 
         if not self.trading_paused or is_profit:
             if self.averaging_count >= self.config.get('max_averaging', 4) and not self.is_reversed and self.reverse_count < self.config.get('max_reverses', 3):
@@ -784,6 +816,7 @@ class IATSStrategyAI(BaseStrategy):
                                 self.reverse_count += 1
                                 self.trailing_active = False
                                 st.session_state.logs.append(f"✅ Переворот выполнен")
+                                self._add_marker('entry', current_price, 'sell', datetime.now())
                         else:
                             self.position = {
                                 'side': 'sell',
@@ -796,6 +829,7 @@ class IATSStrategyAI(BaseStrategy):
                             self.reverse_count += 1
                             self.trailing_active = False
                             st.session_state.logs.append(f"🧪 [DRY] Переворот выполнен")
+                            self._add_marker('entry', current_price, 'sell', datetime.now())
                 elif side == 'sell' and current_price >= avg_price + 15 * self.tick_size:
                     st.session_state.logs.append(f"🔄 Переворот: закрываем SELL, открываем BUY")
                     self.close_position('buy', volume)
@@ -816,6 +850,7 @@ class IATSStrategyAI(BaseStrategy):
                                 self.reverse_count += 1
                                 self.trailing_active = False
                                 st.session_state.logs.append(f"✅ Переворот выполнен")
+                                self._add_marker('entry', current_price, 'buy', datetime.now())
                         else:
                             self.position = {
                                 'side': 'buy',
@@ -828,6 +863,7 @@ class IATSStrategyAI(BaseStrategy):
                             self.reverse_count += 1
                             self.trailing_active = False
                             st.session_state.logs.append(f"🧪 [DRY] Переворот выполнен")
+                            self._add_marker('entry', current_price, 'buy', datetime.now())
 
 # ============================================================
 # ПРОСТАЯ СТРАТЕГИЯ (SMA-кроссовер) — ДЛЯ ПРИМЕРА
@@ -841,7 +877,7 @@ class SMAStrategy(BaseStrategy):
 
     def tick(self):
         current_price = self.get_current_price()
-        ohlcv = self.exchange.fetch_ohlcv(self.symbol, '1m', limit=50)
+        ohlcv = self.exchange.fetch_ohlcv(self.symbol, st.session_state.timeframe, limit=50)
         if not ohlcv:
             return
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -854,7 +890,6 @@ class SMAStrategy(BaseStrategy):
 
         if self.position is None:
             if fast > slow and prev_fast <= prev_slow:
-                # Сигнал на покупку
                 lot = self.config.get('lot', 0.001)
                 st.session_state.logs.append(f"🟢 SMA: BUY сигнал по {current_price}")
                 if not st.session_state.dry_run:
@@ -864,7 +899,6 @@ class SMAStrategy(BaseStrategy):
                 else:
                     self.position = {'side': 'buy', 'entry_price': current_price, 'volume': lot}
         else:
-            # Закрытие по противоположному сигналу
             if fast < slow and prev_fast >= prev_slow:
                 st.session_state.logs.append(f"🔴 SMA: SELL сигнал, закрываем позицию")
                 if not st.session_state.dry_run:
@@ -886,6 +920,8 @@ if 'current_price' not in st.session_state:
     st.session_state.current_price = 0
 if 'balance' not in st.session_state:
     st.session_state.balance = 0
+if 'demo_balance' not in st.session_state:
+    st.session_state.demo_balance = 3000.0  # Начальный демо-баланс
 if 'position' not in st.session_state:
     st.session_state.position = None
 if 'pnl' not in st.session_state:
@@ -896,6 +932,8 @@ if 'equity_data' not in st.session_state:
     st.session_state.equity_data = pd.DataFrame(columns=['time', 'equity'])
 if 'selected_symbol' not in st.session_state:
     st.session_state.selected_symbol = 'BTC/USDT'
+if 'timeframe' not in st.session_state:
+    st.session_state.timeframe = '1m'
 if 'strategy' not in st.session_state:
     st.session_state.strategy = None
 if 'exchange' not in st.session_state:
@@ -907,18 +945,21 @@ if 'ai_assistant' not in st.session_state:
 if 'thread_started' not in st.session_state:
     st.session_state.thread_started = False
 if 'selected_strategy' not in st.session_state:
-    st.session_state.selected_strategy = 'IATS'  # по умолчанию IATS
+    st.session_state.selected_strategy = 'IATS'
 if 'trade_history' not in st.session_state:
     st.session_state.trade_history = []
+if 'markers' not in st.session_state:
+    st.session_state.markers = []
 
 SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
 STRATEGIES = ['IATS', 'SMA (простая)']
+TIMEFRAMES = ['1m', '5m', '15m', '1h', '1d']
 
 # ============================================================
-# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ
+# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ (с таймфреймом)
 # ============================================================
 @st.cache_data(ttl=60)
-def fetch_ohlcv(symbol, timeframe='1m', limit=100):
+def fetch_ohlcv(symbol, timeframe='1m', limit=150):
     try:
         exchange = ccxt.okx({'enableRateLimit': True, 'options': {'defaultType': 'spot'}})
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
@@ -926,6 +967,7 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=100):
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except:
+        # Генерация демо-данных при отсутствии интернета
         dates = pd.date_range(end=datetime.now(), periods=100, freq='1min')
         base_price = 60000 if 'BTC' in symbol else (3000 if 'ETH' in symbol else (150 if 'SOL' in symbol else 0.5))
         np.random.seed(42 + hash(symbol) % 100)
@@ -945,7 +987,7 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=100):
 # ============================================================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ============================================================
-st.markdown('<div class="main-header">🧠 HOVMEL v6.0 — МУЛЬТИ-СТРАТЕГИЯ</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🧠 HOVMEL v6.1 — МУЛЬТИ-СТРАТЕГИЯ</div>', unsafe_allow_html=True)
 
 col_status1, col_status2, col_status3, col_status4, col_status5, col_status6 = st.columns(6)
 
@@ -980,7 +1022,8 @@ with col_status5:
 with col_status6:
     st.markdown(f'<div style="text-align:right;color:#888;">{datetime.now().strftime("%H:%M:%S")}</div>', unsafe_allow_html=True)
 
-col_sym1, col_sym2 = st.columns([2, 10])
+# Выбор инструмента и таймфрейма
+col_sym1, col_sym2, col_tf = st.columns([2, 2, 2])
 with col_sym1:
     new_symbol = st.selectbox("Инструмент", SYMBOLS, index=SYMBOLS.index(st.session_state.selected_symbol))
     if new_symbol != st.session_state.selected_symbol:
@@ -989,8 +1032,14 @@ with col_sym1:
         st.session_state.position = None
         st.session_state.strategy = None
         st.rerun()
+with col_tf:
+    new_tf = st.selectbox("Таймфрейм", TIMEFRAMES, index=TIMEFRAMES.index(st.session_state.timeframe))
+    if new_tf != st.session_state.timeframe:
+        st.session_state.timeframe = new_tf
+        st.session_state.logs.append(f"🔄 Таймфрейм изменён на {new_tf}")
+        st.rerun()
 
-# ===== ВЫБОР СТРАТЕГИИ =====
+# Выбор стратегии
 col_strategy1, col_strategy2 = st.columns([2, 10])
 with col_strategy1:
     new_strategy = st.selectbox("Стратегия", STRATEGIES, index=STRATEGIES.index(st.session_state.selected_strategy))
@@ -1005,20 +1054,59 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Торговля", "📋 Журнал", 
 
 # ========== ВКЛАДКА 1: ТОРГОВЛЯ ==========
 with tab1:
-    df = fetch_ohlcv(st.session_state.selected_symbol)
+    # Загружаем данные с выбранным таймфреймом
+    df = fetch_ohlcv(st.session_state.selected_symbol, st.session_state.timeframe, limit=150)
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-                         row_heights=[0.7, 0.3], subplot_titles=(f'{st.session_state.selected_symbol} - Свечи', 'Объём'))
+                         row_heights=[0.7, 0.3], subplot_titles=(f'{st.session_state.selected_symbol} ({st.session_state.timeframe})', 'Объём'))
     fig.add_trace(go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
                                    name=st.session_state.selected_symbol, increasing_line_color='#00ff88', decreasing_line_color='#ff4444'), row=1, col=1)
+    # SMA
     df['sma20'] = df['close'].rolling(20).mean()
     df['sma50'] = df['close'].rolling(50).mean()
     fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma20'], line=dict(color='#ffaa00', width=1.5), name='SMA 20'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='#4488ff', width=1.5), name='SMA 50'), row=1, col=1)
+
+    # Отображаем маркеры позиций
+    if 'markers' in st.session_state and st.session_state.markers:
+        entry_buy_x = []
+        entry_buy_y = []
+        entry_sell_x = []
+        entry_sell_y = []
+        exit_x = []
+        exit_y = []
+        exit_side = []
+        for m in st.session_state.markers:
+            if m['type'] == 'entry':
+                if m['side'] == 'buy':
+                    entry_buy_x.append(m['time'])
+                    entry_buy_y.append(m['price'])
+                else:
+                    entry_sell_x.append(m['time'])
+                    entry_sell_y.append(m['price'])
+            else:  # exit
+                exit_x.append(m['time'])
+                exit_y.append(m['price'])
+                exit_side.append(m['side'])
+        if entry_buy_x:
+            fig.add_trace(go.Scatter(x=entry_buy_x, y=entry_buy_y, mode='markers',
+                                     marker=dict(symbol='triangle-up', size=12, color='#00ff88'),
+                                     name='Entry BUY'), row=1, col=1)
+        if entry_sell_x:
+            fig.add_trace(go.Scatter(x=entry_sell_x, y=entry_sell_y, mode='markers',
+                                     marker=dict(symbol='triangle-down', size=12, color='#ff4444'),
+                                     name='Entry SELL'), row=1, col=1)
+        if exit_x:
+            fig.add_trace(go.Scatter(x=exit_x, y=exit_y, mode='markers',
+                                     marker=dict(symbol='circle', size=10, color='#ffd700'),
+                                     name='Exit'), row=1, col=1)
+
+    # Отображение текущей позиции (линия входа и средняя)
     if st.session_state.position:
         entry_price = st.session_state.position.get('entry_price', 0)
-        avg_price = st.session_state.position.get('avg_price', entry_price) if 'avg_price' in st.session_state.position else entry_price
+        avg_price = st.session_state.position.get('avg_price', entry_price)
         fig.add_hline(y=entry_price, line=dict(color='#ffd700', width=1, dash='dash'), annotation_text=f'Entry: {entry_price:.1f}', annotation_position='top left', row=1, col=1)
         fig.add_hline(y=avg_price, line=dict(color='#ff8800', width=1.5, dash='dashdot'), annotation_text=f'Avg: {avg_price:.1f}', annotation_position='bottom left', row=1, col=1)
+
     fig.add_trace(go.Bar(x=df['timestamp'], y=df['volume'], name='Volume', marker_color='#4466aa', opacity=0.6), row=2, col=1)
     fig.update_layout(template='plotly_dark', height=550, showlegend=True, hovermode='x unified',
                       paper_bgcolor='#0d0d1a', plot_bgcolor='#0d0d1a', margin=dict(l=10, r=10, t=40, b=10),
@@ -1027,12 +1115,12 @@ with tab1:
     fig.update_yaxes(gridcolor='#1a1a2e', showgrid=True)
     st.plotly_chart(fig, use_container_width=True)
 
+    # Панель управления
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         if st.button("▶️ СТАРТ", use_container_width=True):
             if not st.session_state.running:
                 try:
-                    # Попытка получить ключи (если есть)
                     api_key = os.getenv('OKX_API_KEY') or st.secrets.get('OKX_API_KEY', '')
                     secret = os.getenv('OKX_API_SECRET') or st.secrets.get('OKX_API_SECRET', '')
                     passphrase = os.getenv('OKX_API_PASSPHRASE') or st.secrets.get('OKX_API_PASSPHRASE', '')
@@ -1046,6 +1134,7 @@ with tab1:
                             'options': {'defaultType': 'spot' if st.session_state.mode == 'demo' else 'future'}
                         })
                         st.session_state.logs.append("🔑 Подключение с API-ключами OKX")
+                        # Если есть ключи, баланс будет реальным
                     else:
                         exchange = ccxt.okx({
                             'enableRateLimit': True,
@@ -1053,9 +1142,9 @@ with tab1:
                         })
                         st.session_state.logs.append("🌐 Публичный доступ (без API-ключей) — только симуляция")
                         st.session_state.dry_run = True
+                        st.session_state.balance = st.session_state.demo_balance  # Устанавливаем демо-баланс
                     
                     st.session_state.exchange = exchange
-                    # Общие настройки для всех стратегий
                     config = {
                         'risk_percent': st.session_state.get('risk', 1.0),
                         'max_lot': st.session_state.get('max_lot', 0.01),
@@ -1068,11 +1157,9 @@ with tab1:
                         'enable_trailing': st.session_state.get('trailing', True),
                         'trailing_distance_ticks': st.session_state.get('trail_dist', 40)
                     }
-                    # Создаём стратегию согласно выбору
                     if st.session_state.selected_strategy == 'IATS':
                         st.session_state.strategy = IATSStrategyAI(exchange, st.session_state.selected_symbol, config, st.session_state.ai_assistant)
                     elif st.session_state.selected_strategy == 'SMA (простая)':
-                        # Для SMA используем упрощённый конфиг
                         sma_config = {'lot': config.get('max_lot', 0.01), 'fast_period': 10, 'slow_period': 30}
                         st.session_state.strategy = SMAStrategy(exchange, st.session_state.selected_symbol, sma_config)
                     else:
@@ -1120,6 +1207,7 @@ with tab1:
             else:
                 st.error("❌ Добавьте DEEPSEEK_API_KEY")
 
+    # Метрики
     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
     with col_m1:
         st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">💰 Баланс USDT</div><div class="metric-value metric-green">{st.session_state.balance:.2f}</div></div>', unsafe_allow_html=True)
@@ -1290,7 +1378,7 @@ start_bot_thread()
 st.markdown("---")
 st.markdown(
 '<div style="text-align:center;color:#666;font-size:12px;padding:20px;">'
-'HOVMEL IATS — ШЕДЕВР v6.0 | Мульти-стратегия | Работа без ключей | '
+'HOVMEL IATS — ШЕДЕВР v6.1 | Демо-баланс 3000 USDT | Таймфреймы | Маркеры позиций | '
 'MT5-интерфейс | Поддержка нескольких инструментов | © 2024 HOVMEL Trading Systems'
 '</div>',
 unsafe_allow_html=True

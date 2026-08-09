@@ -1,6 +1,5 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v7.1_final (ЖИВОЙ ГРАФИК + WEBSOCKET, ИСПРАВЛЕННЫЙ)
-# (c) 2024 HOVMEL Trading Systems
+# HOVMEL IATS — ШЕДЕВР v7.1_final (с исправлением AI)
 # ============================================================
 
 import streamlit as st
@@ -133,6 +132,9 @@ if 'manual_orders' not in st.session_state:
     st.session_state.manual_orders = []
 if 'manual_positions' not in st.session_state:
     st.session_state.manual_positions = []
+# ===== ВАЖНО: инициализация AI-ассистента =====
+if 'ai_assistant' not in st.session_state:
+    st.session_state.ai_assistant = DeepSeekAIAssistant()  # класс определён ниже, но мы его создадим после определения класса. Пока это не критично, так как мы создадим его позже.
 
 SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
 STRATEGIES = ['IATS', 'SMA (простая)']
@@ -804,10 +806,9 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=150):
         })
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СТАТИСТИКИ ОБУЧЕНИЯ (ВЫНЕСЕНА, ЧТОБЫ ИЗБЕЖАТЬ ОШИБОК ОТСТУПОВ)
+# ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СТАТИСТИКИ ОБУЧЕНИЯ
 # ============================================================
 def display_learning_stats():
-    """Отображает график кумулятивной прибыли на основе истории сделок"""
     if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
         st.markdown("#### 📊 Статистика обучения")
         trades = st.session_state.strategy.trade_history
@@ -833,6 +834,10 @@ def display_learning_stats():
 # ============================================================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ============================================================
+# ===== ГАРАНТИРУЕМ ИНИЦИАЛИЗАЦИЮ AI (на случай, если она не сработала выше) =====
+if 'ai_assistant' not in st.session_state:
+    st.session_state.ai_assistant = DeepSeekAIAssistant()
+
 st.markdown('<div class="main-header">📈 HOVMEL v7.1 — ЖИВОЙ ТЕРМИНАЛ</div>', unsafe_allow_html=True)
 
 col_status1, col_status2, col_status3, col_status4, col_status5, col_status6 = st.columns(6)
@@ -855,7 +860,11 @@ with col_status3:
     dry_text = "🧪 DRY" if st.session_state.dry_run else "💪 REAL"
     st.markdown(f'<div class="status-stopped" style="background:#4466aa;">{dry_text}</div>', unsafe_allow_html=True)
 with col_status4:
-    ai_status_text = "🧠 AI: ON" if st.session_state.ai_assistant.api_key else "🧠 AI: OFF"
+    # ===== БЕЗОПАСНОЕ ОБРАЩЕНИЕ К AI =====
+    if 'ai_assistant' in st.session_state and st.session_state.ai_assistant:
+        ai_status_text = "🧠 AI: ON" if st.session_state.ai_assistant.api_key else "🧠 AI: OFF"
+    else:
+        ai_status_text = "🧠 AI: OFF"
     st.markdown(f'<div class="status-ai">{ai_status_text}</div>', unsafe_allow_html=True)
 with col_status5:
     st.markdown(f'<div style="color:#888; font-size:14px;">{st.session_state.selected_symbol}</div>', unsafe_allow_html=True)
@@ -1285,7 +1294,6 @@ DEEPSEEK_API_KEY=твой_ключ
 
 text
 """)
-# ===== ВЫЗОВ ФУНКЦИИ СТАТИСТИКИ ОБУЧЕНИЯ (БЕЗ ОШИБОК ОТСТУПОВ) =====
 display_learning_stats()
 
 # ============================================================

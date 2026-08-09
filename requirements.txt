@@ -5,3 +5,4 @@ numpy
 python-dotenv
 ccxt
 streamlit-autorefresh
+websockets

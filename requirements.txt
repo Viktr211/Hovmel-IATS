@@ -4,4 +4,4 @@ pandas
 numpy
 python-dotenv
 ccxt
-requests
+streamlit-autorefresh

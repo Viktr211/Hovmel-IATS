@@ -1,5 +1,6 @@
 # ============================================================
-# HOVMEL IATS — ШЕДЕВР v7.1_final (с исправлением AI)
+# HOVMEL IATS — ШЕДЕВР v7.1_final_fixed (ЖИВОЙ ГРАФИК + WEBSOCKET)
+# (c) 2024 HOVMEL Trading Systems
 # ============================================================
 
 import streamlit as st
@@ -80,180 +81,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# ИНИЦИАЛИЗАЦИЯ ГЛОБАЛЬНЫХ БУФЕРОВ
-# ============================================================
-if 'tick_buffer' not in st.session_state:
-    st.session_state.tick_buffer = []
-if 'ohlcv_buffer' not in st.session_state:
-    st.session_state.ohlcv_buffer = pd.DataFrame(columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-if 'ws_running' not in st.session_state:
-    st.session_state.ws_running = False
-if 'current_price' not in st.session_state:
-    st.session_state.current_price = 0
-if 'balance' not in st.session_state:
-    st.session_state.balance = 3000.0
-if 'demo_balance' not in st.session_state:
-    st.session_state.demo_balance = 3000.0
-if 'position' not in st.session_state:
-    st.session_state.position = None
-if 'pnl' not in st.session_state:
-    st.session_state.pnl = 0
-if 'logs' not in st.session_state:
-    st.session_state.logs = []
-if 'running' not in st.session_state:
-    st.session_state.running = False
-if 'status' not in st.session_state:
-    st.session_state.status = 'stopped'
-if 'dry_run' not in st.session_state:
-    st.session_state.dry_run = True
-if 'mode' not in st.session_state:
-    st.session_state.mode = 'demo'
-if 'selected_symbol' not in st.session_state:
-    st.session_state.selected_symbol = 'BTC/USDT'
-if 'timeframe' not in st.session_state:
-    st.session_state.timeframe = '1m'
-if 'strategy' not in st.session_state:
-    st.session_state.strategy = None
-if 'exchange' not in st.session_state:
-    st.session_state.exchange = None
-if 'thread_started' not in st.session_state:
-    st.session_state.thread_started = False
-if 'selected_strategy' not in st.session_state:
-    st.session_state.selected_strategy = 'IATS'
-if 'trade_history' not in st.session_state:
-    st.session_state.trade_history = []
-if 'history_data' not in st.session_state:
-    st.session_state.history_data = pd.DataFrame(columns=['time', 'symbol', 'side', 'volume', 'profit'])
-if 'equity_data' not in st.session_state:
-    st.session_state.equity_data = pd.DataFrame(columns=['time', 'equity'])
-if 'markers' not in st.session_state:
-    st.session_state.markers = []
-if 'manual_orders' not in st.session_state:
-    st.session_state.manual_orders = []
-if 'manual_positions' not in st.session_state:
-    st.session_state.manual_positions = []
-# ===== ВАЖНО: инициализация AI-ассистента =====
-if 'ai_assistant' not in st.session_state:
-     SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
-STRATEGIES = ['IATS', 'SMA (простая)']
-TIMEFRAMES = ['1m', '5m', '15m', '1h', '1d']
-
-# ============================================================
-# ФУНКЦИЯ ОБНОВЛЕНИЯ СВЕЧЕЙ
-# ============================================================
-def update_candles(tick_price, tick_volume=0, symbol='BTC/USDT'):
-    """Добавляет тик в текущую свечу или создаёт новую"""
-    now = datetime.now()
-    current_minute = now.replace(second=0, microsecond=0)
-    
-    df = st.session_state.ohlcv_buffer
-    
-    if df.empty or df['timestamp'].iloc[-1] != current_minute:
-        # Новая свеча
-        new_row = pd.DataFrame({
-            'timestamp': [current_minute],
-            'open': [tick_price],
-            'high': [tick_price],
-            'low': [tick_price],
-            'close': [tick_price],
-            'volume': [tick_volume]
-        })
-        st.session_state.ohlcv_buffer = pd.concat([df, new_row], ignore_index=True)
-        if len(st.session_state.ohlcv_buffer) > 200:
-            st.session_state.ohlcv_buffer = st.session_state.ohlcv_buffer.iloc[-200:]
-    else:
-        # Обновляем текущую свечу
-        idx = df.index[-1]
-        st.session_state.ohlcv_buffer.at[idx, 'high'] = max(df.at[idx, 'high'], tick_price)
-        st.session_state.ohlcv_buffer.at[idx, 'low'] = min(df.at[idx, 'low'], tick_price)
-        st.session_state.ohlcv_buffer.at[idx, 'close'] = tick_price
-        st.session_state.ohlcv_buffer.at[idx, 'volume'] += tick_volume
-
-# ============================================================
-# WEBSOCKET-ХЕНДЛЕР (для получения тиков в реальном времени)
-# ============================================================
-async def websocket_handler():
-    """Подключение к OKX WebSocket и обработка тиков"""
-    symbol = st.session_state.selected_symbol
-    inst_id = symbol.replace('/', '-')  # BTC/USDT → BTC-USDT
-    
-    uri = "wss://ws.okx.com:8443/ws/v5/public"
-    
-    try:
-        async with websockets.connect(uri) as websocket:
-            subscribe_msg = {
-                "op": "subscribe",
-                "args": [{
-                    "channel": "trades",
-                    "instId": inst_id
-                }]
-            }
-            await websocket.send(json.dumps(subscribe_msg))
-            st.session_state.logs.append(f"✅ Подписка на trades для {symbol}")
-            
-            while st.session_state.get('running', False):
-                try:
-                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                    data = json.loads(message)
-                    
-                    if 'data' in data and len(data['data']) > 0:
-                        for trade in data['data']:
-                            price = float(trade.get('px', 0))
-                            volume = float(trade.get('sz', 0))
-                            if price > 0:
-                                update_candles(price, volume, symbol)
-                                st.session_state.current_price = price
-                                
-                except asyncio.TimeoutError:
-                    continue
-                except Exception as e:
-                    st.session_state.logs.append(f"⚠️ WebSocket ошибка: {e}")
-                    
-    except Exception as e:
-        st.session_state.logs.append(f"❌ WebSocket подключение failed: {e}")
-        st.session_state.ws_running = False
-
-def start_websocket():
-    """Запускает WebSocket в отдельном потоке"""
-    if not st.session_state.ws_running:
-        st.session_state.ws_running = True
-        st.session_state.logs.append("🔌 Запуск WebSocket...")
-        
-        def run_ws():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(websocket_handler())
-        
-        thread = threading.Thread(target=run_ws, daemon=True)
-        thread.start()
-
-# ============================================================
-# ФУНКЦИЯ ЗАПУСКА ФОНОВОГО ПОТОКА (стратегия + WebSocket)
-# ============================================================
-def start_bot_thread():
-    if st.session_state.running and st.session_state.strategy:
-        if not st.session_state.thread_started:
-            def bot_loop():
-                while st.session_state.running:
-                    try:
-                        st.session_state.strategy.tick()
-                        time.sleep(1)
-                    except Exception as e:
-                        st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
-                        time.sleep(5)
-            thread = threading.Thread(target=bot_loop, daemon=True)
-            thread.start()
-            st.session_state.thread_started = True
-            st.session_state.logs.append("🧵 Фоновый поток стратегии запущен")
-        # Запускаем WebSocket отдельно (если ещё не запущен)
-        if not st.session_state.ws_running:
-            start_websocket()
-        if st.session_state.running:
-            time.sleep(0.5)
-            st.rerun()
-
-# ============================================================
-# AI-АССИСТЕНТ (DeepSeek) — сокращённый
+# ОПРЕДЕЛЕНИЕ AI-АССИСТЕНТА (раньше, чтобы не было NameError)
 # ============================================================
 class DeepSeekAIAssistant:
     def __init__(self):
@@ -358,7 +186,7 @@ class DeepSeekAIAssistant:
             return {"error": str(e)}
 
 # ============================================================
-# БАЗОВЫЙ КЛАСС СТРАТЕГИИ И IATS
+# БАЗОВЫЙ КЛАСС СТРАТЕГИИ И IATS (определены после AI, но до использования)
 # ============================================================
 class BaseStrategy:
     def __init__(self, exchange, symbol, config):
@@ -777,7 +605,176 @@ class SMAStrategy(BaseStrategy):
                 self.position = None
 
 # ============================================================
-# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ (FALLBACK, ЕСЛИ WEBSOCKET ЕЩЁ НЕ ДАЛ ДАННЫХ)
+# ИНИЦИАЛИЗАЦИЯ СЕССИИ
+# ============================================================
+if 'tick_buffer' not in st.session_state:
+    st.session_state.tick_buffer = []
+if 'ohlcv_buffer' not in st.session_state:
+    st.session_state.ohlcv_buffer = pd.DataFrame(columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+if 'ws_running' not in st.session_state:
+    st.session_state.ws_running = False
+if 'current_price' not in st.session_state:
+    st.session_state.current_price = 0
+if 'balance' not in st.session_state:
+    st.session_state.balance = 3000.0
+if 'demo_balance' not in st.session_state:
+    st.session_state.demo_balance = 3000.0
+if 'position' not in st.session_state:
+    st.session_state.position = None
+if 'pnl' not in st.session_state:
+    st.session_state.pnl = 0
+if 'logs' not in st.session_state:
+    st.session_state.logs = []
+if 'running' not in st.session_state:
+    st.session_state.running = False
+if 'status' not in st.session_state:
+    st.session_state.status = 'stopped'
+if 'dry_run' not in st.session_state:
+    st.session_state.dry_run = True
+if 'mode' not in st.session_state:
+    st.session_state.mode = 'demo'
+if 'selected_symbol' not in st.session_state:
+    st.session_state.selected_symbol = 'BTC/USDT'
+if 'timeframe' not in st.session_state:
+    st.session_state.timeframe = '1m'
+if 'strategy' not in st.session_state:
+    st.session_state.strategy = None
+if 'exchange' not in st.session_state:
+    st.session_state.exchange = None
+if 'thread_started' not in st.session_state:
+    st.session_state.thread_started = False
+if 'selected_strategy' not in st.session_state:
+    st.session_state.selected_strategy = 'IATS'
+if 'trade_history' not in st.session_state:
+    st.session_state.trade_history = []
+if 'history_data' not in st.session_state:
+    st.session_state.history_data = pd.DataFrame(columns=['time', 'symbol', 'side', 'volume', 'profit'])
+if 'equity_data' not in st.session_state:
+    st.session_state.equity_data = pd.DataFrame(columns=['time', 'equity'])
+if 'markers' not in st.session_state:
+    st.session_state.markers = []
+if 'manual_orders' not in st.session_state:
+    st.session_state.manual_orders = []
+if 'manual_positions' not in st.session_state:
+    st.session_state.manual_positions = []
+# ===== ИНИЦИАЛИЗАЦИЯ AI (после определения класса) =====
+if 'ai_assistant' not in st.session_state:
+    st.session_state.ai_assistant = DeepSeekAIAssistant()
+
+# ============================================================
+# ОПРЕДЕЛЕНИЕ ГЛОБАЛЬНЫХ СПИСКОВ (ДО ИХ ИСПОЛЬЗОВАНИЯ)
+# ============================================================
+SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+STRATEGIES = ['IATS', 'SMA (простая)']
+TIMEFRAMES = ['1m', '5m', '15m', '1h', '1d']
+
+# ============================================================
+# ФУНКЦИЯ ОБНОВЛЕНИЯ СВЕЧЕЙ
+# ============================================================
+def update_candles(tick_price, tick_volume=0, symbol='BTC/USDT'):
+    """Добавляет тик в текущую свечу или создаёт новую"""
+    now = datetime.now()
+    current_minute = now.replace(second=0, microsecond=0)
+    
+    df = st.session_state.ohlcv_buffer
+    
+    if df.empty or df['timestamp'].iloc[-1] != current_minute:
+        # Новая свеча
+        new_row = pd.DataFrame({
+            'timestamp': [current_minute],
+            'open': [tick_price],
+            'high': [tick_price],
+            'low': [tick_price],
+            'close': [tick_price],
+            'volume': [tick_volume]
+        })
+        st.session_state.ohlcv_buffer = pd.concat([df, new_row], ignore_index=True)
+        if len(st.session_state.ohlcv_buffer) > 200:
+            st.session_state.ohlcv_buffer = st.session_state.ohlcv_buffer.iloc[-200:]
+    else:
+        # Обновляем текущую свечу
+        idx = df.index[-1]
+        st.session_state.ohlcv_buffer.at[idx, 'high'] = max(df.at[idx, 'high'], tick_price)
+        st.session_state.ohlcv_buffer.at[idx, 'low'] = min(df.at[idx, 'low'], tick_price)
+        st.session_state.ohlcv_buffer.at[idx, 'close'] = tick_price
+        st.session_state.ohlcv_buffer.at[idx, 'volume'] += tick_volume
+
+# ============================================================
+# WEBSOCKET-ХЕНДЛЕР
+# ============================================================
+async def websocket_handler():
+    symbol = st.session_state.selected_symbol
+    inst_id = symbol.replace('/', '-')  # BTC/USDT → BTC-USDT
+    uri = "wss://ws.okx.com:8443/ws/v5/public"
+    
+    try:
+        async with websockets.connect(uri) as websocket:
+            subscribe_msg = {
+                "op": "subscribe",
+                "args": [{
+                    "channel": "trades",
+                    "instId": inst_id
+                }]
+            }
+            await websocket.send(json.dumps(subscribe_msg))
+            st.session_state.logs.append(f"✅ Подписка на trades для {symbol}")
+            
+            while st.session_state.get('running', False):
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                    data = json.loads(message)
+                    if 'data' in data and len(data['data']) > 0:
+                        for trade in data['data']:
+                            price = float(trade.get('px', 0))
+                            volume = float(trade.get('sz', 0))
+                            if price > 0:
+                                update_candles(price, volume, symbol)
+                                st.session_state.current_price = price
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    st.session_state.logs.append(f"⚠️ WebSocket ошибка: {e}")
+    except Exception as e:
+        st.session_state.logs.append(f"❌ WebSocket подключение failed: {e}")
+        st.session_state.ws_running = False
+
+def start_websocket():
+    if not st.session_state.ws_running:
+        st.session_state.ws_running = True
+        st.session_state.logs.append("🔌 Запуск WebSocket...")
+        def run_ws():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(websocket_handler())
+        thread = threading.Thread(target=run_ws, daemon=True)
+        thread.start()
+
+# ============================================================
+# ФУНКЦИЯ ЗАПУСКА ФОНОВОГО ПОТОКА
+# ============================================================
+def start_bot_thread():
+    if st.session_state.running and st.session_state.strategy:
+        if not st.session_state.thread_started:
+            def bot_loop():
+                while st.session_state.running:
+                    try:
+                        st.session_state.strategy.tick()
+                        time.sleep(1)
+                    except Exception as e:
+                        st.session_state.logs.append(f"❌ Ошибка в цикле: {e}")
+                        time.sleep(5)
+            thread = threading.Thread(target=bot_loop, daemon=True)
+            thread.start()
+            st.session_state.thread_started = True
+            st.session_state.logs.append("🧵 Фоновый поток стратегии запущен")
+        if not st.session_state.ws_running:
+            start_websocket()
+        if st.session_state.running:
+            time.sleep(0.5)
+            st.rerun()
+
+# ============================================================
+# ФУНКЦИЯ ЗАГРУЗКИ ДАННЫХ (FALLBACK)
 # ============================================================
 def fetch_ohlcv(symbol, timeframe='1m', limit=150):
     try:
@@ -804,7 +801,7 @@ def fetch_ohlcv(symbol, timeframe='1m', limit=150):
         })
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СТАТИСТИКИ ОБУЧЕНИЯ
+# ФУНКЦИЯ СТАТИСТИКИ ОБУЧЕНИЯ
 # ============================================================
 def display_learning_stats():
     if st.session_state.strategy and len(st.session_state.strategy.trade_history) > 0:
@@ -832,10 +829,6 @@ def display_learning_stats():
 # ============================================================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ============================================================
-# ===== ГАРАНТИРУЕМ ИНИЦИАЛИЗАЦИЮ AI (на случай, если она не сработала выше) =====
-if 'ai_assistant' not in st.session_state:
-    st.session_state.ai_assistant = DeepSeekAIAssistant()
-
 st.markdown('<div class="main-header">📈 HOVMEL v7.1 — ЖИВОЙ ТЕРМИНАЛ</div>', unsafe_allow_html=True)
 
 col_status1, col_status2, col_status3, col_status4, col_status5, col_status6 = st.columns(6)
@@ -858,11 +851,7 @@ with col_status3:
     dry_text = "🧪 DRY" if st.session_state.dry_run else "💪 REAL"
     st.markdown(f'<div class="status-stopped" style="background:#4466aa;">{dry_text}</div>', unsafe_allow_html=True)
 with col_status4:
-    # ===== БЕЗОПАСНОЕ ОБРАЩЕНИЕ К AI =====
-    if 'ai_assistant' in st.session_state and st.session_state.ai_assistant:
-        ai_status_text = "🧠 AI: ON" if st.session_state.ai_assistant.api_key else "🧠 AI: OFF"
-    else:
-        ai_status_text = "🧠 AI: OFF"
+    ai_status_text = "🧠 AI: ON" if st.session_state.ai_assistant.api_key else "🧠 AI: OFF"
     st.markdown(f'<div class="status-ai">{ai_status_text}</div>', unsafe_allow_html=True)
 with col_status5:
     st.markdown(f'<div style="color:#888; font-size:14px;">{st.session_state.selected_symbol}</div>', unsafe_allow_html=True)
@@ -899,7 +888,6 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Торговля", "📋 Журнал", 
 
 # ========== ВКЛАДКА 1: ТОРГОВЛЯ ==========
 with tab1:
-    # Используем данные из буфера (если есть), иначе fallback
     if not st.session_state.ohlcv_buffer.empty:
         df = st.session_state.ohlcv_buffer.copy()
     else:
@@ -909,19 +897,16 @@ with tab1:
                          row_heights=[0.7, 0.3], subplot_titles=(f'{st.session_state.selected_symbol} ({st.session_state.timeframe})', 'Объём'))
     fig.add_trace(go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
                                    name=st.session_state.selected_symbol, increasing_line_color='#00ff88', decreasing_line_color='#ff4444'), row=1, col=1)
-    # SMA
     if len(df) > 20:
         df['sma20'] = df['close'].rolling(20).mean()
         df['sma50'] = df['close'].rolling(50).mean()
         fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma20'], line=dict(color='#ffaa00', width=1.5), name='SMA 20'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='#4488ff', width=1.5), name='SMA 50'), row=1, col=1)
 
-    # Линия текущей цены
     current_price = st.session_state.current_price if st.session_state.current_price else df['close'].iloc[-1]
     fig.add_hline(y=current_price, line=dict(color='#ffff00', width=1.5, dash='dot'),
                   annotation_text=f'Last: {current_price:.1f}', annotation_position='top right', row=1, col=1)
 
-    # Линия входа и средняя
     if st.session_state.position:
         entry_price = st.session_state.position.get('entry_price', 0)
         avg_price = st.session_state.position.get('avg_price', entry_price)
@@ -932,7 +917,6 @@ with tab1:
             fig.add_hline(y=avg_price, line=dict(color='#ff8800', width=1.5, dash='dashdot'),
                           annotation_text=f'Avg: {avg_price:.1f}', annotation_position='bottom left', row=1, col=1)
 
-    # Маркеры
     if 'markers' in st.session_state and st.session_state.markers:
         entry_buy_x, entry_buy_y, entry_sell_x, entry_sell_y, exit_x, exit_y = [], [], [], [], [], []
         for m in st.session_state.markers:
@@ -1064,11 +1048,10 @@ with tab1:
         ai_status = "Активен" if st.session_state.ai_assistant.api_key else "Неактивен"
         st.markdown(f'<div class="metric-card"><div style="color:#888;font-size:14px;">🧠 AI</div><div class="metric-value metric-purple">{ai_status}</div></div>', unsafe_allow_html=True)
 
-    # ---- НИЖНЯЯ ПАНЕЛЬ: ТОРГОВЛЯ (позиции, ордера, ручное открытие) ----
+    # ---- НИЖНЯЯ ПАНЕЛЬ: ТОРГОВЛЯ ----
     st.markdown("---")
     st.markdown("### 📋 Торговля (ручное управление)")
 
-    # Отображение текущей позиции
     if st.session_state.position:
         col_pos1, col_pos2, col_pos3, col_pos4, col_pos5 = st.columns(5)
         with col_pos1:
@@ -1100,7 +1083,6 @@ with tab1:
     else:
         st.info("Нет открытой позиции")
 
-    # ---- Таблица ордеров ----
     st.markdown("#### Активные ордера")
     if st.session_state.manual_orders:
         df_orders = pd.DataFrame(st.session_state.manual_orders)
@@ -1113,7 +1095,6 @@ with tab1:
     else:
         st.write("Нет активных ордеров")
 
-    # ---- Форма для ручного открытия ордера ----
     with st.expander("✏️ Открыть ордер вручную", expanded=False):
         order_type = st.selectbox("Тип ордера", ["Рыночный", "Лимитный", "Стоп-лимитный"])
         order_side = st.selectbox("Направление", ["BUY", "SELL"])
